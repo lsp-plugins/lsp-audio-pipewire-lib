@@ -23,16 +23,28 @@
 #include <lsp-plug.in/audio/iface/builtin.h>
 #include <lsp-plug.in/audio/pipewire/factory.h>
 
+#include <lsp-plug.in/common/static.h>
+
+#include <pipewire/pipewire.h>
+
 namespace lsp
 {
     namespace audio
     {
         namespace pipewire
         {
-            factory_t   factory;
+            // Static initialization of PipeWire
+            static void init_pipewire()
+            {
+                pw_init(NULL, NULL);
+            }
+
+            static StaticInitializer pipewire_initializer(init_pipewire);
 
             // Builtin factory binding
+            factory_t   factory;
             LSP_AUDIO_BUILTIN_FACTORY(builtin_pipewire_factory, &lsp::audio::pipewire::factory);
+
         } /* namespace pipewire */
     } /* namespace audio */
 } /* namespace lsp */

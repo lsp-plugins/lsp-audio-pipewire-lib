@@ -33,6 +33,10 @@
     #define SPA_KEY_THREAD_RESET_ON_FORK    "thread.reset-on-fork"  /* reset priority and policy for real-time threads on fork. Default true */
 #endif /* SPA_KEY_THREAD_RESET_ON_FORK */
 
+#ifndef PW_KEY_LOOP_CANCEL
+    #define PW_KEY_LOOP_CANCEL              "loop.cancel"
+#endif /* PW_KEY_LOOP_CANCEL */
+
 #include <stdlib.h>
 #include <errno.h>
 

@@ -26,7 +26,6 @@
 
 #include <lsp-plug.in/audio/iface/backend.h>
 #include <lsp-plug.in/audio/pipewire/dictionary.h>
-#include <lsp-plug.in/ipc/Mutex.h>
 
 #include <pipewire/pipewire.h>
 #include <pipewire/extensions/client-node.h>
@@ -65,7 +64,7 @@ namespace lsp
                 public:
                     char               *sClientName;
                     char               *sServerName;
-                    ipc::Mutex         *pDataMutex;
+//                    ipc::Mutex         *pDataMutex;
                     pw_data_loop       *pAudioDataLoop;
                     pw_thread_loop     *pContextThreadLoop;
                     pw_thread_loop     *pNotifyThreadLoop;

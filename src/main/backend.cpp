@@ -140,7 +140,7 @@ namespace lsp
             {
                 sClientName                     = NULL;
                 sServerName                     = NULL;
-                pDataMutex                      = NULL;
+//                pDataMutex                      = NULL;
                 pAudioDataLoop                  = NULL;
                 pContextThreadLoop              = NULL;
                 pNotifyThreadLoop               = NULL;
@@ -244,9 +244,9 @@ namespace lsp
                 }
 
                 // Create mutex
-                back->pDataMutex = new ipc::Mutex();
-                if (back->pDataMutex == NULL)
-                    return STATUS_NO_MEM;
+//                back->pDataMutex = new ipc::Mutex();
+//                if (back->pDataMutex == NULL)
+//                    return STATUS_NO_MEM;
 
                 // Create context properties
                 prop_dict * const dict = &back->sClientProps;
@@ -483,11 +483,11 @@ namespace lsp
                     back->pContextLoop = NULL;
                 }
 
-                if (back->pDataMutex != NULL)
-                {
-                    delete back->pDataMutex;
-                    back->pDataMutex = NULL;
-                }
+//                if (back->pDataMutex != NULL)
+//                {
+//                    delete back->pDataMutex;
+//                    back->pDataMutex = NULL;
+//                }
 
                 if (back->sServerName != NULL)
                 {

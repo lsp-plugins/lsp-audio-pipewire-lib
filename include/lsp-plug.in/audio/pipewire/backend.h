@@ -77,8 +77,8 @@ namespace lsp
                     pw_client_node     *pNode;
                     spa_thread_utils   *pOldThreadUtils;
 
-                    prop_dict           sClientProps;
-                    prop_dict           sContextProps;
+                    dictionary          sClientProps;
+                    dictionary          sContextProps;
                     spa_thread_utils    sThreadUtils;
                     spa_node_info       sNodeInfo;
                     spa_hook            vHooks[HOOK_TOTAL];

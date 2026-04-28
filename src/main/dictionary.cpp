@@ -30,17 +30,17 @@ namespace lsp
     {
         namespace pipewire
         {
-            prop_dict::prop_dict() noexcept
+            dictionary::dictionary() noexcept
             {
                 construct();
             }
 
-            prop_dict::~prop_dict() noexcept
+            dictionary::~dictionary() noexcept
             {
                 destroy();
             }
 
-            void prop_dict::construct() noexcept
+            void dictionary::construct() noexcept
             {
                 sData.flags     = SPA_DICT_FLAG_SORTED;
                 sData.n_items   = 0;
@@ -48,41 +48,42 @@ namespace lsp
                 nCapacity       = 0;
             }
 
-            void prop_dict::destroy() noexcept
+            void dictionary::destroy() noexcept
             {
-                if (sData.items != NULL)
+                if (sData.items == NULL)
+                    return;
+
+                spa_dict_item * const items = const_cast<spa_dict_item *>(sData.items);
+                sData.items     = NULL;
+
+                for (size_t i=0, n=sData.n_items; i<n; ++i)
                 {
-                    spa_dict_item *items = const_cast<spa_dict_item *>(sData.items);
-                    sData.items     = NULL;
-
-                    for (size_t i=0, n=sData.n_items; i<n; ++i)
-                    {
-                        spa_dict_item * const item = &items[i];
-                        if (item->key != NULL)
-                            free(const_cast<char *>(item->key));
-                        if (item->value != NULL)
-                            free(const_cast<char *>(item->value));
-                    }
-
-                    free(items);
+                    spa_dict_item * const item = &items[i];
+                    if (item->key != NULL)
+                        free(const_cast<char *>(item->key));
+                    if (item->value != NULL)
+                        free(const_cast<char *>(item->value));
                 }
+
+                free(items);
+
                 sData.n_items   = 0;
                 nCapacity       = 0;
             }
 
-            void prop_dict::swap(prop_dict *dst) noexcept
+            void dictionary::swap(dictionary *dst) noexcept
             {
                 lsp::swap(sData, dst->sData);
                 lsp::swap(nCapacity, dst->nCapacity);
             }
 
-            void prop_dict::swap(prop_dict &dst) noexcept
+            void dictionary::swap(dictionary &dst) noexcept
             {
                 lsp::swap(sData, dst.sData);
                 lsp::swap(nCapacity, dst.nCapacity);
             }
 
-            uint32_t prop_dict::index_of(const char *key) const noexcept
+            uint32_t dictionary::index_of(const char *key) const noexcept
             {
                 ssize_t first = 0, last = ssize_t(sData.n_items) - 1;
                 while (first <= last)
@@ -102,21 +103,25 @@ namespace lsp
                 return uint32_t(first);
             }
 
-            status_t prop_dict::ensure_capacity() noexcept
+            status_t dictionary::ensure_capacity() noexcept
             {
                 if ((sData.n_items + 1) <= nCapacity)
                     return STATUS_OK;
 
                 const size_t new_cap        = lsp_max(nCapacity + (nCapacity >> 1), 16u);
-                spa_dict_item * const items = static_cast<spa_dict_item *>(realloc(const_cast<spa_dict_item *>(sData.items), new_cap));
+                spa_dict_item * const items = static_cast<spa_dict_item *>(
+                    realloc(
+                        const_cast<spa_dict_item *>(sData.items),
+                        new_cap * sizeof(spa_dict_item)));
                 if (items == NULL)
                     return STATUS_NO_MEM;
 
                 sData.items             = items;
+                nCapacity               = new_cap;
                 return STATUS_OK;
             }
 
-            status_t prop_dict::append(const char *key, const char *value) noexcept
+            status_t dictionary::append(const char *key, const char *value) noexcept
             {
                 // Ensure that we have enough space to add one more item
                 const status_t res = ensure_capacity();
@@ -135,14 +140,14 @@ namespace lsp
                 }
 
                 // Store key and value
-                spa_dict_item * const item = const_cast<spa_dict_item *>(&sData.items[sData.n_items]);
+                spa_dict_item * const item = const_cast<spa_dict_item *>(&sData.items[sData.n_items++]);
                 item->key       = pkey;
                 item->value     = pvalue;
 
                 return STATUS_OK;
             }
 
-            status_t prop_dict::insert_at(size_t index, const char *key, const char *value) noexcept
+            status_t dictionary::insert_at(size_t index, const char *key, const char *value) noexcept
             {
                 // Ensure that we have enough space to add one more item
                 const status_t res = ensure_capacity();
@@ -168,11 +173,12 @@ namespace lsp
                 spa_dict_item * const item = &items[index];
                 item->key       = pkey;
                 item->value     = pvalue;
+                ++sData.n_items;
 
                 return STATUS_OK;
             }
 
-            status_t prop_dict::put(const char *key, const char *value) noexcept
+            status_t dictionary::put(const char *key, const char *value) noexcept
             {
                 if ((key == NULL) || (value == NULL))
                     return STATUS_BAD_ARGUMENTS;
@@ -209,12 +215,12 @@ namespace lsp
                 return STATUS_OK;
             }
 
-            status_t prop_dict::put(const spa_dict_item *item) noexcept
+            status_t dictionary::put(const spa_dict_item *item) noexcept
             {
                 return (item != NULL) ? put(item->key, item->value) : STATUS_BAD_ARGUMENTS;
             }
 
-            status_t prop_dict::put(const pw_properties *props) noexcept
+            status_t dictionary::put(const pw_properties *props) noexcept
             {
                 if (props == NULL)
                     return STATUS_BAD_ARGUMENTS;
@@ -235,7 +241,7 @@ namespace lsp
                 return STATUS_OK;
             }
 
-            status_t prop_dict::put(const spa_dict *props) noexcept
+            status_t dictionary::put(const spa_dict *props) noexcept
             {
                 if (props == NULL)
                     return STATUS_BAD_ARGUMENTS;
@@ -250,14 +256,14 @@ namespace lsp
                 return STATUS_OK;
             }
 
-            status_t prop_dict::put(const prop_dict *props) noexcept
+            status_t dictionary::put(const dictionary *props) noexcept
             {
                 return (props != NULL) ? put(props->dict()) : STATUS_BAD_ARGUMENTS;
             }
 
-            status_t prop_dict::set(const pw_properties *props) noexcept
+            status_t dictionary::set(const pw_properties *props) noexcept
             {
-                prop_dict tmp;
+                dictionary tmp;
                 const status_t res = tmp.put(props);
                 if (res == STATUS_OK)
                     tmp.swap(this);
@@ -265,9 +271,9 @@ namespace lsp
                 return res;
             }
 
-            status_t prop_dict::set(const spa_dict *props) noexcept
+            status_t dictionary::set(const spa_dict *props) noexcept
             {
-                prop_dict tmp;
+                dictionary tmp;
                 const status_t res = tmp.put(props);
                 if (res == STATUS_OK)
                     tmp.swap(this);
@@ -275,17 +281,17 @@ namespace lsp
                 return res;
             }
 
-            status_t prop_dict::set(const prop_dict *props) noexcept
+            status_t dictionary::set(const dictionary *props) noexcept
             {
                 return (props != NULL) ? set(props->dict()) : STATUS_BAD_ARGUMENTS;
             }
 
-            status_t prop_dict::put(spa_dict_item item) noexcept
+            status_t dictionary::put(spa_dict_item item) noexcept
             {
                 return put(item.key, item.value);
             }
 
-            const spa_dict_item *prop_dict::item(const char *key) const noexcept
+            const spa_dict_item *dictionary::item(const char *key) const noexcept
             {
                 ssize_t first = 0, last = ssize_t(sData.n_items) - 1;
                 while (first <= last)
@@ -305,29 +311,29 @@ namespace lsp
                 return NULL;
             }
 
-            const char *prop_dict::value(const char *key, const char *dfl) const noexcept
+            const char *dictionary::value(const char *key, const char *dfl) const noexcept
             {
                 const spa_dict_item * const v = item(key);
                 return (v != NULL) ? v->value : dfl;
             }
 
-            bool prop_dict::exists(const char *key) const noexcept
+            bool dictionary::exists(const char *key) const noexcept
             {
                 const spa_dict_item * const v = item(key);
                 return v != NULL;
             }
 
-            const char *prop_dict::key(size_t index) const noexcept
+            const char *dictionary::key(size_t index) const noexcept
             {
                 return (index < sData.n_items) ? sData.items[index].key : NULL;
             }
 
-            const char *prop_dict::value(size_t index) const noexcept
+            const char *dictionary::value(size_t index) const noexcept
             {
                 return (index < sData.n_items) ? sData.items[index].value : NULL;
             }
 
-            const spa_dict_item *prop_dict::item(size_t index) const noexcept
+            const spa_dict_item *dictionary::item(size_t index) const noexcept
             {
                 return (index < sData.n_items) ? &sData.items[index] : NULL;
             }

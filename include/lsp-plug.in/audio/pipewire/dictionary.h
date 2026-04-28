@@ -37,7 +37,7 @@ namespace lsp
     {
         namespace pipewire
         {
-            struct prop_dict
+            struct dictionary
             {
                 protected:
                     spa_dict        sData;
@@ -50,29 +50,29 @@ namespace lsp
                     status_t                    insert_at(size_t index, const char *key, const char *value) noexcept;
 
                 public:
-                    prop_dict() noexcept;
-                    prop_dict(const prop_dict &) = delete;
-                    prop_dict(prop_dict &&) = delete;
-                    prop_dict & operator = (const prop_dict &) = delete;
-                    prop_dict & operator = (prop_dict &&) = delete;
-                    ~prop_dict() noexcept;
+                    dictionary() noexcept;
+                    dictionary(const dictionary &) = delete;
+                    dictionary(dictionary &&) = delete;
+                    dictionary & operator = (const dictionary &) = delete;
+                    dictionary & operator = (dictionary &&) = delete;
+                    ~dictionary() noexcept;
 
                     void                        construct() noexcept;
                     void                        destroy() noexcept;
-                    void                        swap(prop_dict *dst) noexcept;
-                    void                        swap(prop_dict &dst) noexcept;
+                    void                        swap(dictionary *dst) noexcept;
+                    void                        swap(dictionary &dst) noexcept;
 
                 public:
                     status_t                    set(const pw_properties *props) noexcept;
                     status_t                    set(const spa_dict *props) noexcept;
-                    status_t                    set(const prop_dict *props) noexcept;
+                    status_t                    set(const dictionary *props) noexcept;
 
                     status_t                    put(const char *key, const char *value) noexcept;
                     status_t                    put(const spa_dict_item *item) noexcept;
                     status_t                    put(spa_dict_item item) noexcept;
                     status_t                    put(const pw_properties *props) noexcept;
                     status_t                    put(const spa_dict *props) noexcept;
-                    status_t                    put(const prop_dict *props) noexcept;
+                    status_t                    put(const dictionary *props) noexcept;
                     const char                 *value(const char *key, const char *dfl = NULL) const noexcept;
                     const spa_dict_item        *item(const char *key) const noexcept;
                     const char                 *key(size_t index) const noexcept;
@@ -81,11 +81,14 @@ namespace lsp
                     bool                        exists(const char *key) const noexcept;
 
                 public:
-                    inline const spa_dict      *dict() const noexcept           { return &sData;            }
-                    inline const spa_dict_item *items() const noexcept          { return sData.items;       }
-                    inline size_t               size() const noexcept           { return sData.n_items;     }
-                    inline size_t               capacity() const noexcept       { return nCapacity;         }
+                    inline const spa_dict      *dict() const noexcept           { return &sData;                }
+                    inline const spa_dict_item *items() const noexcept          { return sData.items;           }
+                    inline size_t               size() const noexcept           { return sData.n_items;         }
+                    inline size_t               capacity() const noexcept       { return nCapacity;             }
                     inline pw_properties       *make_properties() const noexcept{ return pw_properties_new_dict(&sData);    }
+                    inline bool                 contains(const char *key) const noexcept { return exists(key);  }
+                    inline bool                 is_empty() const noexcept       { return sData.n_items == 0;    }
+                    inline void                 clear() noexcept                { destroy();                    }
 
                 public:
                     template <typename ... A>
@@ -124,7 +127,7 @@ namespace lsp
                     }
 
                     template <typename ... A>
-                    inline status_t             put(const prop_dict *props, A && ... args) noexcept
+                    inline status_t             put(const dictionary *props, A && ... args) noexcept
                     {
                         const status_t res = put(props);
                         return (res == STATUS_OK) ? put(lsp::forward<A>(args)...) : res;

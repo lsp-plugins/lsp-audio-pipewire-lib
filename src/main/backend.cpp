@@ -253,7 +253,7 @@ namespace lsp
 //                    return STATUS_NO_MEM;
 
                 // Create context properties
-                prop_dict * const dict = &back->sClientProps;
+                dictionary * const dict = &back->sClientProps;
                 LSP_STATUS_ASSERT(dict->put(
                     PW_KEY_LOOP_CANCEL, prop_false,
                     SPA_KEY_THREAD_RESET_ON_FORK, prop_false,
@@ -286,7 +286,7 @@ namespace lsp
                 back->pAudioLoop        = pw_data_loop_get_loop(back->pAudioDataLoop);
 
                 // Fetch context properties
-                prop_dict * const context_dict = &back->sContextProps;
+                dictionary * const context_dict = &back->sContextProps;
                 {
                     pw_properties * const context_properties = dict->make_properties();
                     if (context_properties == NULL)

@@ -53,6 +53,10 @@ namespace lsp
             static const char *prop_true    = "true";
             static const char *prop_false   = "false";
 
+            static const char *BACKEND_MEDIA_TYPE       = "Audio";
+            static const char *BACKEND_MEDIA_CATEGORY   = "Duplex";
+            static const char *BACKEND_MEDIA_ROLE       = "DSP";
+
             // PipeWire core events
             const pw_core_events backend_t::core_events = {
                 .version = PW_VERSION_CORE_EVENTS,
@@ -191,9 +195,8 @@ namespace lsp
                 npos->ticks_per_beat            = 4096.0f;
 
                 nLatency                        = 0;
-                nRequestedSeq                   = 0;
-                nRequestedSync                  = -EINVAL;
-                atomic_store(&nReceivedSync, -EINVAL);
+                nSyncRequestId                  = -EINVAL;
+                nSyncResponseId                 = -EINVAL;
 
                 // Export virtual table
                 #define AUDIO_PIPEWIRE_BACKEND_EXP(func)    audio::backend_t::func = backend_t::func;
@@ -281,12 +284,15 @@ namespace lsp
 
                 // Create context properties
                 res = back->sClientDict.put(
-                    PW_KEY_LOOP_CANCEL, prop_true,
+                    PW_KEY_LOOP_CANCEL, prop_false,
                     SPA_KEY_THREAD_RESET_ON_FORK, prop_false,
                     PW_KEY_REMOTE_NAME, back->sServerName,
                     PW_KEY_CLIENT_NAME, back->sClientName,
                     PW_KEY_CLIENT_API, "native",
-                    PW_KEY_CONFIG_NAME, "client.conf");
+                    PW_KEY_CONFIG_NAME, "client.conf",
+                    PW_KEY_MEDIA_TYPE, BACKEND_MEDIA_TYPE,
+                    PW_KEY_MEDIA_CATEGORY, BACKEND_MEDIA_CATEGORY,
+                    PW_KEY_MEDIA_ROLE, BACKEND_MEDIA_ROLE);
                 if (res != STATUS_OK)
                 {
                     lsp_warn("Failed to initialize client properties, code=%d", int(res));
@@ -473,7 +479,8 @@ namespace lsp
                             PW_KEY_MEDIA_CATEGORY, "Duplex",
                             PW_KEY_MEDIA_ROLE, "DSP",
                             PW_KEY_NODE_ALWAYS_PROCESS, prop_true,
-                            PW_KEY_NODE_LOCK_QUANTUM, prop_true);
+                            PW_KEY_NODE_LOCK_QUANTUM, prop_true,
+                            PW_KEY_NODE_TRANSPORT_SYNC, prop_true);
                         if (res != STATUS_OK)
                         {
                             lsp_warn("Failed to synchronize client dictionary, code=%d", int(res));
@@ -527,18 +534,17 @@ namespace lsp
 
                     back->sNodeInfo.change_mask = 0;
 
-                    // Issue sync request
-                    back->nRequestedSeq         = 0;
-                    back->nRequestedSync        = -EINVAL;
-                    atomic_store(&back->nReceivedSync, -EINVAL);
+                    // Reset transport
+                    back->nSyncRequestId            = -EINVAL;
+                    back->nSyncResponseId           = -EINVAL;
+                }
 
-                    back->request_sync();
-                    error = back->wait_sync_complete();
-                    if (error < 0)
-                    {
-                        lsp_warn("Failed to synchrnonize with PipeWire server: code=%d", -error);
-                        return STATUS_DISCONNECTED;
-                    }
+                // Issue sync request
+                error = back->perform_sync();
+                if (error < 0)
+                {
+                    lsp_warn("Failed to synchrnonize with PipeWire server: code=%d", -error);
+                    return STATUS_DISCONNECTED;
                 }
 
                 // Start notification thread loop
@@ -653,36 +659,23 @@ namespace lsp
                 return STATUS_NOT_IMPLEMENTED;
             }
 
-            int backend_t::request_sync()
+            int backend_t::perform_sync()
             {
                 if (pCore == NULL)
                     return -EINVAL;
 
                 pw_thread_loop_lock(pContextThreadLoop);
                 lsp_finally { pw_thread_loop_unlock(pContextThreadLoop); };
-                nRequestedSync = pw_proxy_sync(to_pw_proxy(pCore), ++nRequestedSeq);
 
-                return nRequestedSync;
-            }
+                nSyncResponseId = -EINVAL;
+                nSyncRequestId  = pw_proxy_sync(to_pw_proxy(pCore), 0);
 
-            int backend_t::wait_sync_complete()
-            {
-                if (nRequestedSync < 0)
-                    return nRequestedSync;
-
-                int received_sync = atomic_load(&nReceivedSync);
-                if (received_sync == nRequestedSync)
-                    return received_sync;
-
-                pw_thread_loop_lock(pContextThreadLoop);
-                lsp_finally { pw_thread_loop_unlock(pContextThreadLoop); };
-
-                do {
+                do
+                {
                     pw_thread_loop_wait(pContextThreadLoop);
-                    received_sync = atomic_load(&nReceivedSync);
-                } while ((received_sync >= 0) && (received_sync != nRequestedSync));
+                } while ((nSyncResponseId >= 0) && (nSyncRequestId != nSyncResponseId));
 
-                return received_sync;
+                return nSyncResponseId;
             }
 
             status_t backend_t::set_latency(audio::backend_t *self, uint32_t latency)
@@ -791,8 +784,8 @@ namespace lsp
                 if (id != PW_ID_CORE)
                     return;
 
-                atomic_store(&back->nReceivedSync, seq);
-                if (back->nRequestedSync == seq)
+                back->nSyncResponseId   = seq;
+                if ((back->nSyncRequestId == seq) || (back->nSyncResponseId < 0))
                     pw_thread_loop_signal(back->pContextThreadLoop, false);
             }
 

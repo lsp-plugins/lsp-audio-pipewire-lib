@@ -93,9 +93,8 @@ namespace lsp
                     io_parameters_t     sIOParams;
                     io_position_t       sIOPosition;
                     uint32_t            nLatency;
-                    int                 nRequestedSeq;
-                    int                 nRequestedSync;
-                    int                 nReceivedSync;
+                    int                 nSyncRequestId;
+                    int                 nSyncResponseId;
 
                 public:
                     explicit            backend_t();
@@ -164,8 +163,7 @@ namespace lsp
                     static int execute_context_properties_match(void *self, const char *location, const char *action, const char *val, size_t len);
 
                 protected:
-                    int                 request_sync();
-                    int                 wait_sync_complete();
+                    int                 perform_sync();
 
                 public:
                     static status_t     connect(

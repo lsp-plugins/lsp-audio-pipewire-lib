@@ -190,6 +190,10 @@ namespace lsp
                 if (key == NULL)
                     return STATUS_BAD_ARGUMENTS;
 
+                // Skip empty properties
+                if ((value == NULL) || (key[0] == '\0'))
+                    return STATUS_OK;
+
                 // Invalidate string representation
                 if (sToString != NULL)
                 {

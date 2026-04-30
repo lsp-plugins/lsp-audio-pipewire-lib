@@ -59,6 +59,9 @@ UTEST_BEGIN("pipewire", dictionary)
         UTEST_ASSERT(!dict.is_empty());
         UTEST_ASSERT(dict.size() == 8);
 
+        // Output dictionary contents
+        printf("Dictionary contents:\n%s\n", dict.to_string());
+
         // Check contains() call
         printf("Checking contains() method...\n");
         UTEST_ASSERT(dict.contains("a"));

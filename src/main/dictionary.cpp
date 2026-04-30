@@ -46,6 +46,7 @@ namespace lsp
                 sData.n_items   = 0;
                 sData.items     = NULL;
                 nCapacity       = 0;
+                sToString       = NULL;
             }
 
             void dictionary::destroy() noexcept
@@ -182,6 +183,13 @@ namespace lsp
             {
                 if ((key == NULL) || (value == NULL))
                     return STATUS_BAD_ARGUMENTS;
+
+                // Invalidate string representation
+                if (sToString != NULL)
+                {
+                    free(sToString);
+                    sToString   = NULL;
+                }
 
                 // Append value if out of bounds
                 const uint32_t items = sData.n_items;
@@ -336,6 +344,45 @@ namespace lsp
             const spa_dict_item *dictionary::item(size_t index) const noexcept
             {
                 return (index < sData.n_items) ? &sData.items[index] : NULL;
+            }
+
+            const char *dictionary::to_string() const noexcept
+            {
+                if (sToString != NULL)
+                    return sToString;
+
+                // Estimate the size of resulting string
+                size_t count = 1;
+                const spa_dict & props = sData;
+                const size_t nprops = props.n_items;
+                for (size_t i=0; i<nprops; ++i)
+                {
+                    const spa_dict_item * item = &props.items[i];
+                    count += strlen(item->key) + strlen(item->value) + 4;
+                }
+
+                // Allocate resulting string
+                sToString = static_cast<char *>(malloc(count));
+                if (sToString == NULL)
+                    return NULL;
+
+                // Serialize data
+                char *dst = sToString;
+                for (size_t i=0; i<nprops; ++i)
+                {
+                    const spa_dict_item * item = &props.items[i];
+                    dst         = stpcpy(dst, item->key);
+                    dst[0]      = ' ';
+                    dst[1]      = '=';
+                    dst[2]      = ' ';
+                    dst         = stpcpy(&dst[3], item->value);
+                    *(dst++)    = '\n';
+                }
+
+                // Write terminating character
+                *dst = '\0';
+
+                return sToString;
             }
 
         } /* namespace pipewire */

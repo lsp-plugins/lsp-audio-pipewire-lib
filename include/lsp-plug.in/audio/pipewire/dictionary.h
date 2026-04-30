@@ -24,6 +24,7 @@
 
 #include <lsp-plug.in/audio/pipewire/version.h>
 
+#include <lsp-plug.in/common/debug.h>
 #include <lsp-plug.in/common/variadic.h>
 #include <lsp-plug.in/common/status.h>
 #include <lsp-plug.in/common/types.h>
@@ -42,6 +43,7 @@ namespace lsp
                 protected:
                     spa_dict        sData;
                     uint32_t        nCapacity;
+                    mutable char   *sToString;
 
                 protected:
                     uint32_t                    index_of(const char *key) const noexcept;
@@ -79,6 +81,7 @@ namespace lsp
                     const char                 *value(size_t index) const noexcept;
                     const spa_dict_item        *item(size_t index) const noexcept;
                     bool                        exists(const char *key) const noexcept;
+                    const char                 *to_string() const noexcept;
 
                 public:
                     inline const spa_dict      *dict() const noexcept           { return &sData;                }

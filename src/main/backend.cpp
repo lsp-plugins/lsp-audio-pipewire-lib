@@ -19,6 +19,7 @@
  * along with lsp-audio-pipewire-lib. If not, see <https://www.gnu.org/licenses/>.
  */
 
+#include <lsp-plug.in/common/atomic.h>
 #include <lsp-plug.in/common/debug.h>
 #include <lsp-plug.in/common/finally.h>
 #include <lsp-plug.in/common/status.h>
@@ -184,6 +185,9 @@ namespace lsp
                 npos->ticks_per_beat            = 4096.0f;
 
                 nLatency                        = 0;
+                nRequestedSeq                   = 0;
+                nRequestedSync                  = -EINVAL;
+                atomic_store(&nReceivedSync, -EINVAL);
 
                 // Export virtual table
                 #define AUDIO_PIPEWIRE_BACKEND_EXP(func)    audio::backend_t::func = backend_t::func;
@@ -304,6 +308,8 @@ namespace lsp
                     pw_context_conf_section_match_rules(
                         back->pContext, "client.rules",
                         context_dict->dict(), execute_context_properties_match, self);
+                    lsp_trace("Context properties:\n%s",
+                        context_dict->to_string());
                 }
 
                 // Thread utils interface
@@ -377,6 +383,9 @@ namespace lsp
                             PW_KEY_MEDIA_ROLE, "DSP",
                             PW_KEY_NODE_ALWAYS_PROCESS, prop_true,
                             PW_KEY_NODE_LOCK_QUANTUM, prop_true));
+
+                        lsp_trace("Node properties:\n%s",
+                            context_dict->to_string());
                     }
 
                     // Create client node
@@ -416,7 +425,23 @@ namespace lsp
                         0, NULL, &back->sNodeInfo);
 
                     back->sNodeInfo.change_mask = 0;
+
+                    // Issue sync request
+                    back->nRequestedSeq         = 0;
+                    back->nRequestedSync        = -EINVAL;
+                    atomic_store(&back->nReceivedSync, -EINVAL);
+
+                    back->request_sync();
+                    error = back->wait_sync_complete();
+                    if (error < 0)
+                    {
+                        lsp_warn("Failed to synchrnonize with PipeWire server: code=%d", -error);
+                        return STATUS_DISCONNECTED;
+                    }
                 }
+
+                // Start notification thread loop
+                pw_thread_loop_start(back->pNotifyThreadLoop);
 
                 // Return success result
                 success             = true;
@@ -512,6 +537,38 @@ namespace lsp
                 bzero(&back->sNodeInfo, sizeof(back->sNodeInfo));
 
                 return STATUS_NOT_IMPLEMENTED;
+            }
+
+            int backend_t::request_sync()
+            {
+                if (pCore == NULL)
+                    return -EINVAL;
+
+                pw_thread_loop_lock(pContextThreadLoop);
+                lsp_finally { pw_thread_loop_unlock(pContextThreadLoop); };
+                nRequestedSync = pw_proxy_sync(to_pw_proxy(pCore), ++nRequestedSeq);
+
+                return nRequestedSync;
+            }
+
+            int backend_t::wait_sync_complete()
+            {
+                if (nRequestedSync < 0)
+                    return nRequestedSync;
+
+                int received_sync = atomic_load(&nReceivedSync);
+                if (received_sync == nRequestedSync)
+                    return received_sync;
+
+                pw_thread_loop_lock(pContextThreadLoop);
+                lsp_finally { pw_thread_loop_unlock(pContextThreadLoop); };
+
+                do {
+                    pw_thread_loop_wait(pContextThreadLoop);
+                    received_sync = atomic_load(&nReceivedSync);
+                } while ((received_sync >= 0) && (received_sync != nRequestedSync));
+
+                return received_sync;
             }
 
             status_t backend_t::set_latency(audio::backend_t *self, uint32_t latency)
@@ -615,6 +672,14 @@ namespace lsp
             void backend_t::on_core_done(void *self, uint32_t id, int seq)
             {
                 lsp_trace("self=%p, id=%d, seq=%d", self, int(id), int(seq));
+
+                backend_t * const back = cast(self);
+                if (id != PW_ID_CORE)
+                    return;
+
+                atomic_store(&back->nReceivedSync, seq);
+                if (back->nRequestedSync == seq)
+                    pw_thread_loop_signal(back->pContextThreadLoop, false);
             }
 
             void backend_t::on_core_ping(void *self, uint32_t id, int seq)

@@ -51,25 +51,31 @@ namespace lsp
 
             void dictionary::destroy() noexcept
             {
-                if (sData.items == NULL)
-                    return;
-
-                spa_dict_item * const items = const_cast<spa_dict_item *>(sData.items);
-                sData.items     = NULL;
-
-                for (size_t i=0, n=sData.n_items; i<n; ++i)
+                if (sToString != NULL)
                 {
-                    spa_dict_item * const item = &items[i];
-                    if (item->key != NULL)
-                        free(const_cast<char *>(item->key));
-                    if (item->value != NULL)
-                        free(const_cast<char *>(item->value));
+                    free(sToString);
+                    sToString       = NULL;
                 }
 
-                free(items);
+                if (sData.items != NULL)
+                {
+                    spa_dict_item * const items = const_cast<spa_dict_item *>(sData.items);
+                    sData.items     = NULL;
 
-                sData.n_items   = 0;
-                nCapacity       = 0;
+                    for (size_t i=0, n=sData.n_items; i<n; ++i)
+                    {
+                        spa_dict_item * const item = &items[i];
+                        if (item->key != NULL)
+                            free(const_cast<char *>(item->key));
+                        if (item->value != NULL)
+                            free(const_cast<char *>(item->value));
+                    }
+
+                    free(items);
+
+                    sData.n_items   = 0;
+                    nCapacity       = 0;
+                }
             }
 
             void dictionary::swap(dictionary *dst) noexcept
@@ -133,8 +139,8 @@ namespace lsp
                 char *pkey      = strdup(key);
                 if (pkey == NULL)
                     return STATUS_NO_MEM;
-                char *pvalue    = strdup(value);
-                if (pvalue == NULL)
+                char *pvalue    = (value) ? strdup(value) : NULL;
+                if ((value != NULL) && (pvalue == NULL))
                 {
                     free(pkey);
                     return STATUS_NO_MEM;
@@ -159,8 +165,8 @@ namespace lsp
                 char *pkey      = strdup(key);
                 if (pkey == NULL)
                     return STATUS_NO_MEM;
-                char *pvalue    = strdup(value);
-                if (pvalue == NULL)
+                char *pvalue    = (value) ? strdup(value) : NULL;
+                if ((value != NULL) && (pvalue == NULL))
                 {
                     free(pkey);
                     return STATUS_NO_MEM;
@@ -181,7 +187,7 @@ namespace lsp
 
             status_t dictionary::put(const char *key, const char *value) noexcept
             {
-                if ((key == NULL) || (value == NULL))
+                if (key == NULL)
                     return STATUS_BAD_ARGUMENTS;
 
                 // Invalidate string representation
@@ -210,7 +216,7 @@ namespace lsp
                 }
 
                 // Make copy of value
-                char *pvalue    = strdup(value);
+                char *pvalue    = (value) ? strdup(value) : NULL;
                 if (pvalue == NULL)
                     return STATUS_NO_MEM;
 
@@ -358,7 +364,9 @@ namespace lsp
                 for (size_t i=0; i<nprops; ++i)
                 {
                     const spa_dict_item * item = &props.items[i];
-                    count += strlen(item->key) + strlen(item->value) + 4;
+                    count += strlen(item->key) + 4;
+                    if (item->value != NULL)
+                        count   += strlen(item->value);
                 }
 
                 // Allocate resulting string
@@ -375,8 +383,16 @@ namespace lsp
                     dst[0]      = ' ';
                     dst[1]      = '=';
                     dst[2]      = ' ';
-                    dst         = stpcpy(&dst[3], item->value);
-                    *(dst++)    = '\n';
+                    if (item->value != NULL)
+                    {
+                        dst         = stpcpy(&dst[3], item->value);
+                        *(dst++)    = '\n';
+                    }
+                    else
+                    {
+                        dst[3]      = '\n';
+                        dst        += 4;
+                    }
                 }
 
                 // Write terminating character

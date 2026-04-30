@@ -23,6 +23,9 @@
 #include <lsp-plug.in/audio/pipewire/backend.h>
 #include <lsp-plug.in/audio/pipewire/factory.h>
 
+#include <lsp-plug.in/common/static.h>
+
+#include <pipewire/pipewire.h>
 #include <stdlib.h>
 
 namespace lsp
@@ -40,6 +43,15 @@ namespace lsp
                     90
                 }
             };
+
+            // Static initialization of PipeWire
+            static void init_pipewire()
+            {
+                pw_init(NULL, NULL);
+            }
+
+            static StaticInitializer pipewire_initializer(init_pipewire);
+
 
             const audio::backend_metadata_t *factory_t::metadata(audio::factory_t *self, size_t id)
             {

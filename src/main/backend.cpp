@@ -47,6 +47,9 @@ namespace lsp
     {
         namespace pipewire
         {
+            static constexpr size_t NOTIFY_BUFFER_SIZE          = 1 << 16;
+            static constexpr size_t NOTIFY_BUFFER_MASK          = NOTIFY_BUFFER_SIZE - 1;
+
             static const char *prop_true    = "true";
             static const char *prop_false   = "false";
 
@@ -153,16 +156,19 @@ namespace lsp
                 pContextLoop                    = NULL;
                 pNotifyLoop                     = NULL;
                 pContext                        = NULL;
+                pNotifySource                   = NULL;
                 pCore                           = NULL;
+                pMemPool                        = NULL;
                 pRegistry                       = NULL;
                 pNode                           = NULL;
                 pOldThreadUtils                 = NULL;
 
-                sClientProps.construct();
-                sContextProps.construct();
+                sClientDict.construct();
+                sContextDict.construct();
                 bzero(&sThreadUtils, sizeof(sThreadUtils));
-                bzero(vHooks, sizeof(spa_hook) * HOOK_TOTAL);
                 bzero(&sNodeInfo, sizeof(sNodeInfo));
+                bzero(&sNotifyRing, sizeof(sNotifyRing));
+                bzero(vHooks, sizeof(spa_hook) * HOOK_TOTAL);
 
                 pUserData                       = NULL;
                 pCallbacks                      = NULL;
@@ -222,6 +228,7 @@ namespace lsp
                 void *user_data)
             {
                 int error;
+                status_t res;
                 backend_t * const back = cast(self);
 
                 // Check that backend is disconnected
@@ -241,14 +248,30 @@ namespace lsp
                 // Fill client name
                 back->sClientName   = strdup(params->client_name);
                 if (back->sClientName == NULL)
+                {
+                    lsp_warn("Failed to allocate client name string");
                     return STATUS_NO_MEM;
+                }
 
                 // Fill server name
-                if ((params->url != NULL) && (strcmp(params->url, "default") != 0))
+                if ((params->url != NULL) &&
+                    ((strlen(params->url) == 0) ||
+                    (strcmp(params->url, "default") != 0)))
                 {
                     back->sServerName   = strdup(params->url);
                     if (back->sServerName == NULL)
+                    {
+                        lsp_warn("Failed to allocate server name string");
                         return STATUS_NO_MEM;
+                    }
+                }
+
+                // Allocate notification buffer
+                back->pNotifyBuffer     = calloc(1, NOTIFY_BUFFER_SIZE);
+                if (back->pNotifyBuffer == NULL)
+                {
+                    lsp_warn("Failed to allocate notification buffer");
+                    return STATUS_NO_MEM;
                 }
 
                 // Create mutex
@@ -257,59 +280,107 @@ namespace lsp
 //                    return STATUS_NO_MEM;
 
                 // Create context properties
-                dictionary * const dict = &back->sClientProps;
-                LSP_STATUS_ASSERT(dict->put(
-                    PW_KEY_LOOP_CANCEL, prop_false,
+                res = back->sClientDict.put(
+                    PW_KEY_LOOP_CANCEL, prop_true,
                     SPA_KEY_THREAD_RESET_ON_FORK, prop_false,
                     PW_KEY_REMOTE_NAME, back->sServerName,
-                    PW_KEY_CLIENT_NAME, back->sClientName));
+                    PW_KEY_CLIENT_NAME, back->sClientName,
+                    PW_KEY_CLIENT_API, "native",
+                    PW_KEY_CONFIG_NAME, "client.conf");
+                if (res != STATUS_OK)
+                {
+                    lsp_warn("Failed to initialize client properties, code=%d", int(res));
+                    return res;
+                }
 
-                // Create thread loops
+                // Create context thread loop
                 back->pContextThreadLoop = pw_thread_loop_new(back->sClientName, NULL);
                 if (back->pContextThreadLoop == NULL)
+                {
+                    lsp_warn("Failed to create PipeWire context thread loop");
                     return STATUS_UNKNOWN_ERR;
+                }
                 back->pContextLoop = pw_thread_loop_get_loop(back->pContextThreadLoop);
-
-                back->pNotifyThreadLoop = pw_thread_loop_new(back->sClientName, NULL);
-                if (back->pNotifyThreadLoop == NULL)
-                    return STATUS_UNKNOWN_ERR;
-                back->pNotifyLoop = pw_thread_loop_get_loop(back->pNotifyThreadLoop);
 
                 // Create context
                 {
-                    pw_properties * const context_properties = dict->make_properties();
-                    if (context_properties == NULL)
+                    lsp_trace("Context properties:\n%s\n", back->sClientDict.to_string());
+
+                    pw_properties * const context_props = back->sClientDict.make_properties();
+                    if (context_props == NULL)
+                    {
+                        lsp_warn("Failed to create context properties");
                         return STATUS_NO_MEM;
-                    back->pContext = pw_context_new(back->pContextLoop, context_properties, 0);
+                    }
+                    back->pContext = pw_context_new(back->pContextLoop, context_props, 0);
                     if (back->pContext == NULL)
+                    {
+                        lsp_warn("Failed to create PipeWire context");
+                        pw_properties_free(context_props);
                         return STATUS_NO_MEM;
+                    }
                 }
 
-                pw_data_loop_stop(back->pAudioDataLoop);
-                back->pAudioDataLoop    = pw_context_get_data_loop(back->pContext);
-                back->pAudioLoop        = pw_data_loop_get_loop(back->pAudioDataLoop);
-
-                // Fetch context properties
-                dictionary * const context_dict = &back->sContextProps;
+                // Create notify thread loop
+                back->pNotifyThreadLoop = pw_thread_loop_new(back->sClientName, NULL);
+                if (back->pNotifyThreadLoop == NULL)
                 {
-                    pw_properties * const context_properties = dict->make_properties();
-                    if (context_properties == NULL)
+                    lsp_warn("Failed to create PipeWire notification thread loop");
+                    return STATUS_DISCONNECTED;
+                }
+                back->pNotifyLoop       = pw_thread_loop_get_loop(back->pNotifyThreadLoop);
+                back->pNotifySource     = pw_loop_add_event(back->pNotifyLoop, on_notify_event, back);
+                if (back->pNotifySource == NULL)
+                {
+                    lsp_warn("Failed to add PipeWire notification source");
+                    return STATUS_DISCONNECTED;
+                }
+                spa_ringbuffer_init(&back->sNotifyRing);
+
+                // Update client properties
+                {
+                    pw_properties * const client_props = back->sClientDict.make_properties();
+                    if (client_props == NULL)
+                    {
+                        lsp_warn("Failed to allocate client properties");
                         return STATUS_NO_MEM;
-                    lsp_finally { pw_properties_free(context_properties); };
-                    error = pw_context_conf_update_props(back->pContext, "context.properties", context_properties);
+                    }
+                    lsp_finally { pw_properties_free(client_props); };
+
+                    error = pw_context_conf_update_props(back->pContext, "filter.properties", client_props);
                     if (error < 0)
                     {
                         lsp_warn("Failed to fetch context properties: code=%d", -error);
                         return STATUS_DISCONNECTED;
                     }
 
-                    LSP_STATUS_ASSERT(context_dict->put(context_properties));
+                    res = back->sClientDict.put(client_props);
+                    if (res != STATUS_OK)
+                    {
+                        lsp_warn("Failed to synchronize client dictionary, code=%d", int(res));
+                        return res;
+                    }
 
-                    pw_context_conf_section_match_rules(
-                        back->pContext, "client.rules",
-                        context_dict->dict(), execute_context_properties_match, self);
-                    lsp_trace("Context properties:\n%s",
-                        context_dict->to_string());
+                    lsp_trace("Client dictionary:\n%s\n", back->sClientDict.to_string());
+                }
+
+                // Fetch context properties
+                {
+                    const pw_properties * const context_props = pw_context_get_properties(back->pContext);
+                    if (context_props != NULL)
+                    {
+                        res = back->sContextDict.put(context_props);
+                        if (res != STATUS_OK)
+                        {
+                            lsp_warn("Failed to synchronize context dictionary, code=%d", int(res));
+                            return res;
+                        }
+
+                        pw_context_conf_section_match_rules(
+                            back->pContext, "client.rules",
+                            back->sContextDict.dict(), execute_context_properties_match, self);
+                    }
+                    lsp_trace("Context dictionary:\n%s", back->sContextDict.to_string());
                 }
 
                 // Thread utils interface
@@ -317,7 +388,6 @@ namespace lsp
                 if (back->pOldThreadUtils == NULL)
                     back->pOldThreadUtils = pw_thread_utils_get();
 
-                // SPA_INTERFACE_INIT
                 back->sThreadUtils      = spa_thread_utils {
                     SPA_INTERFACE_INIT(
                         SPA_TYPE_INTERFACE_ThreadUtils,
@@ -330,20 +400,33 @@ namespace lsp
                     SPA_TYPE_INTERFACE_ThreadUtils,
                     &back->sThreadUtils);
 
-                pw_thread_loop_start(back->pContextThreadLoop);
+                // Stop audio data loop
+                back->pAudioDataLoop    = pw_context_get_data_loop(back->pContext);
+                back->pAudioLoop        = pw_data_loop_get_loop(back->pAudioDataLoop);
+                pw_data_loop_stop(back->pAudioDataLoop);
+
+                // Start context thread loop
+                error = pw_thread_loop_start(back->pContextThreadLoop);
+                if (error < 0)
+                {
+                    lsp_warn("Failed to start context thread loop: code=%d", -error);
+                    return STATUS_DISCONNECTED;
+                }
+
                 {
                     pw_thread_loop_lock(back->pContextThreadLoop);
                     lsp_finally { pw_thread_loop_unlock(back->pContextThreadLoop); };
 
                     // Connect to PipeWire Core and add Core listener
                     {
-                        pw_properties * const core_properties = dict->make_properties();
+                        pw_properties * const core_properties = back->sClientDict.make_properties();
                         if (core_properties == NULL)
                             return STATUS_NO_MEM;
                         back->pCore             = pw_context_connect(back->pContext, core_properties, 0);
                         if (back->pCore == NULL)
                         {
                             lsp_warn("Could not connect to PipeWire");
+                            pw_properties_free(core_properties);
                             return STATUS_DISCONNECTED;
                         }
                     }
@@ -351,6 +434,14 @@ namespace lsp
                     if (error < 0)
                     {
                         lsp_warn("Failed to add core listener: code=%d", -error);
+                        return STATUS_DISCONNECTED;
+                    }
+
+                    // Get memory pool
+                    back->pMemPool  = pw_core_get_mempool(back->pCore);
+                    if (back->pMemPool == NULL)
+                    {
+                        lsp_warn("Could not obtain memory pool");
                         return STATUS_DISCONNECTED;
                     }
 
@@ -370,11 +461,11 @@ namespace lsp
 
                     // Setup properties
                     {
-                        const char *key_node_group = context_dict->value(
+                        const char *key_node_group = back->sContextDict.value(
                             PW_KEY_NODE_GROUP,
-                            dict->value(
+                            back->sClientDict.value(
                                 PW_KEY_NODE_GROUP, "group.dsp.0"));
-                        LSP_STATUS_ASSERT(dict->put(
+                        res = back->sClientDict.put(
                             PW_KEY_NODE_NAME, back->sClientName,
                             PW_KEY_NODE_GROUP, key_node_group,
                             PW_KEY_NODE_DESCRIPTION, back->sClientName,
@@ -382,20 +473,25 @@ namespace lsp
                             PW_KEY_MEDIA_CATEGORY, "Duplex",
                             PW_KEY_MEDIA_ROLE, "DSP",
                             PW_KEY_NODE_ALWAYS_PROCESS, prop_true,
-                            PW_KEY_NODE_LOCK_QUANTUM, prop_true));
+                            PW_KEY_NODE_LOCK_QUANTUM, prop_true);
+                        if (res != STATUS_OK)
+                        {
+                            lsp_warn("Failed to synchronize client dictionary, code=%d", int(res));
+                            return res;
+                        }
 
-                        lsp_trace("Node properties:\n%s",
-                            context_dict->to_string());
+                        lsp_trace("Node dictionary:\n%s", back->sClientDict.to_string());
                     }
 
                     // Create client node
-                    back->pNode = static_cast<pw_client_node *>(pw_core_create_object(
-                        back->pCore,
-                        "client-node",
-                        PW_TYPE_INTERFACE_ClientNode,
-                        PW_VERSION_CLIENT_NODE,
-                        dict->dict(),
-                        0));
+                    back->pNode = static_cast<pw_client_node *>(
+                        pw_core_create_object(
+                            back->pCore,
+                            "client-node",
+                            PW_TYPE_INTERFACE_ClientNode,
+                            PW_VERSION_CLIENT_NODE,
+                            back->sClientDict.dict(),
+                            0));
                     if (back->pNode == NULL)
                     {
                         lsp_warn("Could not create PipeWire node");
@@ -417,12 +513,17 @@ namespace lsp
                     back->sNodeInfo.max_output_ports = UINT32_MAX;
                     back->sNodeInfo.change_mask = SPA_NODE_CHANGE_MASK_FLAGS | SPA_NODE_CHANGE_MASK_PROPS;
                     back->sNodeInfo.flags = SPA_NODE_FLAG_RT;
-                    back->sNodeInfo.props = const_cast<spa_dict *>(dict->dict());
+                    back->sNodeInfo.props = const_cast<spa_dict *>(back->sClientDict.dict());
 
-                    pw_client_node_update(
+                    error = pw_client_node_update(
                         back->pNode,
                         PW_CLIENT_NODE_UPDATE_INFO,
                         0, NULL, &back->sNodeInfo);
+                    if (error < 0)
+                    {
+                        lsp_warn("Failed to update client node, code=%d", -error);
+                        return STATUS_DISCONNECTED;
+                    }
 
                     back->sNodeInfo.change_mask = 0;
 
@@ -441,7 +542,12 @@ namespace lsp
                 }
 
                 // Start notification thread loop
-                pw_thread_loop_start(back->pNotifyThreadLoop);
+                error = pw_thread_loop_start(back->pNotifyThreadLoop);
+                if (error < 0)
+                {
+                    lsp_warn("Failed to start notify thread loop: code=%d", -error);
+                    return STATUS_DISCONNECTED;
+                }
 
                 // Return success result
                 success             = true;
@@ -483,6 +589,7 @@ namespace lsp
                             pw_core_disconnect(back->pCore);
                             back->pCore     = NULL;
                         }
+                        back->pMemPool  = NULL;
 
                         // Destroy context
                         if (back->pContext != NULL)
@@ -518,6 +625,12 @@ namespace lsp
 //                    back->pDataMutex = NULL;
 //                }
 
+                if (back->pNotifyBuffer != NULL)
+                {
+                    free(back->pNotifyBuffer);
+                    back->pNotifyBuffer = NULL;
+                }
+
                 if (back->sServerName != NULL)
                 {
                     free(back->sServerName);
@@ -530,11 +643,12 @@ namespace lsp
                     back->sClientName = NULL;
                 }
 
-                back->sClientProps.destroy();
-                back->sContextProps.destroy();
+                back->sClientDict.destroy();
+                back->sContextDict.destroy();
                 bzero(&back->sThreadUtils, sizeof(back->sThreadUtils));
-                bzero(back->vHooks, sizeof(spa_hook) * HOOK_TOTAL);
                 bzero(&back->sNodeInfo, sizeof(back->sNodeInfo));
+                bzero(&back->sNotifyRing, sizeof(back->sNotifyRing));
+                bzero(back->vHooks, sizeof(spa_hook) * HOOK_TOTAL);
 
                 return STATUS_NOT_IMPLEMENTED;
             }
@@ -759,90 +873,115 @@ namespace lsp
 
             int backend_t::on_node_transport(void *self, int readfd, int writefd, uint32_t mem_id, uint32_t offset, uint32_t size)
             {
+                lsp_trace("self = %p", self);
                 return 0;
             }
 
             int backend_t::on_node_set_param(void *self, uint32_t id, uint32_t flags, const spa_pod *param)
             {
+                lsp_trace("self = %p", self);
                 return 0;
             }
 
             int backend_t::on_node_set_io(void *self, uint32_t id, uint32_t mem_id, uint32_t offset, uint32_t size)
             {
+                lsp_trace("self = %p", self);
                 return 0;
             }
 
             int backend_t::on_node_event(void *self, const struct spa_event *event)
             {
+                lsp_trace("self = %p", self);
                 return 0;
             }
 
             int backend_t::on_node_command(void *self, const struct spa_command *command)
             {
+                lsp_trace("self = %p", self);
                 return 0;
             }
 
             int backend_t::on_node_add_port(void *self, spa_direction direction, uint32_t port_id, const spa_dict *props)
             {
+                lsp_trace("self = %p", self);
                 return 0;
             }
 
             int backend_t::on_node_remove_port(void *self, spa_direction direction, uint32_t port_id)
             {
+                lsp_trace("self = %p", self);
                 return 0;
             }
 
             int backend_t::on_node_port_set_param(void *self, spa_direction direction, uint32_t port_id, uint32_t id, uint32_t flags, const spa_pod *param)
             {
+                lsp_trace("self = %p", self);
                 return 0;
             }
 
             int backend_t::on_node_port_use_buffers(void *self, spa_direction direction, uint32_t port_id, uint32_t mix_id, uint32_t flags, uint32_t n_buffers, pw_client_node_buffer *buffers)
             {
+                lsp_trace("self = %p", self);
                 return 0;
             }
 
             int backend_t::on_node_port_set_io(void *self, spa_direction direction, uint32_t port_id, uint32_t mix_id, uint32_t id, uint32_t mem_id, uint32_t offset, uint32_t size)
             {
+                lsp_trace("self = %p", self);
                 return 0;
             }
 
             int backend_t::on_node_set_activation(void *self, uint32_t node_id, int signalfd, uint32_t mem_id, uint32_t offset, uint32_t size)
             {
+                lsp_trace("self = %p", self);
                 return 0;
             }
 
             int backend_t::on_node_port_set_mix_info(void *self, spa_direction direction, uint32_t port_id, uint32_t mix_id, uint32_t peer_id, const spa_dict *props)
             {
+                lsp_trace("self = %p", self);
                 return 0;
             }
 
             void backend_t::on_node_destroy(void *self)
             {
+                lsp_trace("self = %p", self);
             }
 
             void backend_t::on_node_bound(void *self, uint32_t global_id)
             {
+                lsp_trace("self = %p", self);
             }
 
             void backend_t::on_node_removed(void *self)
             {
+                lsp_trace("self = %p", self);
             }
 
             void backend_t::on_node_done(void *self, int seq)
             {
+                lsp_trace("self = %p", self);
             }
 
             void backend_t::on_node_error(void *self, int seq, int res, const char *message)
             {
+                lsp_trace("self = %p", self);
             }
 
             void backend_t::on_node_bound_props(void *self, uint32_t global_id, const struct spa_dict *props)
             {
+                lsp_trace("self = %p", self);
+            }
+
+            void backend_t::on_notify_event(void *self, uint64_t count)
+            {
+                lsp_trace("self = %p", self);
             }
 
             int backend_t::execute_context_properties_match(void *self, const char *location, const char *action, const char *val, size_t len)
             {
+                lsp_trace("self = %p", self);
+
                 backend_t * const back = cast(self);
                 if ((back == NULL) || (location == NULL) || (action == NULL) || (val == NULL))
                     return -EINVAL;
@@ -850,7 +989,7 @@ namespace lsp
                 if (strcmp(action, "update-props") == 0)
                 {
                     // Update properties
-                    pw_properties * const props = back->sClientProps.make_properties();
+                    pw_properties * const props = back->sClientDict.make_properties();
                     if (props == NULL)
                         return -ENOMEM;
                     lsp_finally { pw_properties_free(props); };
@@ -859,7 +998,7 @@ namespace lsp
                     if (res < 0)
                         return res;
 
-                    const status_t xres = back->sClientProps.set(props);
+                    const status_t xres = back->sClientDict.set(props);
                     if (xres != STATUS_OK)
                         return -ENOMEM;
                 }

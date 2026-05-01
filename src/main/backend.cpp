@@ -1044,11 +1044,13 @@ namespace lsp
 
             int backend_t::on_node_set_activation(void *self, uint32_t node_id, int signalfd, uint32_t mem_id, uint32_t offset, uint32_t size)
             {
+            #ifdef LSP_TRACE
                 backend_t * const back = cast(self);
                 lsp_trace("Activation self=%p (%s), node_id=%d, signalfd=%d, mem_id=%d, offset=%d, size=%d",
                     self,
                     (back->nNodeGlobalId == node_id) ? "our" : "set",
                     int(node_id), int(signalfd), int(mem_id), int(offset), int(size));
+            #endif /* LSP_TRACE */
 
                 return 0;
             }

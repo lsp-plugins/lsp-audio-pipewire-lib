@@ -27,6 +27,9 @@
 #include <lsp-plug.in/stdlib/string.h>
 #include <lsp-plug.in/audio/pipewire/backend.h>
 
+#include <lsp-plug.in/audio/pipewire/impl/cast.h>
+#include <lsp-plug.in/audio/pipewire/impl/memmap.h>
+
 #include <spa/support/thread.h>
 #include <pipewire/thread.h>
 
@@ -48,7 +51,7 @@ namespace lsp
         namespace pipewire
         {
             static constexpr size_t NOTIFY_BUFFER_SIZE          = 1 << 16;
-            static constexpr size_t NOTIFY_BUFFER_MASK          = NOTIFY_BUFFER_SIZE - 1;
+//            static constexpr size_t NOTIFY_BUFFER_MASK          = NOTIFY_BUFFER_SIZE - 1;
 
             static const char *prop_true    = "true";
             static const char *prop_false   = "false";
@@ -126,22 +129,6 @@ namespace lsp
 //            static constexpr uint32_t PORT_TYPE_FREE        = 0xffffffff;
 //            static constexpr uint32_t PORT_MASK_ALL         = PORT_DIR_MASK | PORT_TYPE_MASK;
 
-            static inline pipewire::backend_t *cast(audio::backend_t *self)
-            {
-                return static_cast<pipewire::backend_t *>(self);
-            }
-
-            static inline pipewire::backend_t *cast(void *self)
-            {
-                return static_cast<pipewire::backend_t *>(self);
-            }
-
-            template <typename T>
-            static inline pw_proxy *to_pw_proxy(T *arg)
-            {
-                return reinterpret_cast<pw_proxy *>(arg);
-            }
-
             // Backend implementation
             backend_t::backend_t()
             {
@@ -173,6 +160,8 @@ namespace lsp
                 bzero(&sNodeInfo, sizeof(sNodeInfo));
                 bzero(&sNotifyRing, sizeof(sNotifyRing));
                 bzero(vHooks, sizeof(spa_hook) * HOOK_TOTAL);
+                mmPosition.construct();
+                mmClock.construct();
 
                 pUserData                       = NULL;
                 pCallbacks                      = NULL;
@@ -194,6 +183,7 @@ namespace lsp
                 npos->beats_per_minute_change   = 0.0f;
                 npos->ticks_per_beat            = 4096.0f;
 
+                nNodeGlobalId                   = SPA_ID_INVALID;
                 nLatency                        = 0;
                 nSyncRequestId                  = -EINVAL;
                 nSyncResponseId                 = -EINVAL;
@@ -240,6 +230,15 @@ namespace lsp
 
                 if (params->client_name == NULL)
                     return STATUS_BAD_ARGUMENTS;
+
+                // Reset parameters
+                back->nNodeGlobalId             = SPA_ID_INVALID;
+                back->nLatency                  = 0;
+                back->nSyncRequestId            = -EINVAL;
+                back->nSyncResponseId           = -EINVAL;
+
+                back->mmPosition.construct();
+                back->mmClock.construct();
 
                 // Set-up destruction hook
                 bool success = false;
@@ -373,20 +372,30 @@ namespace lsp
                 // Fetch context properties
                 {
                     const pw_properties * const context_props = pw_context_get_properties(back->pContext);
-                    if (context_props != NULL)
+                    if (context_props == NULL)
                     {
-                        res = back->sContextDict.put(context_props);
-                        if (res != STATUS_OK)
-                        {
-                            lsp_warn("Failed to synchronize context dictionary, code=%d", int(res));
-                            return res;
-                        }
-
-                        pw_context_conf_section_match_rules(
-                            back->pContext, "client.rules",
-                            back->sContextDict.dict(), execute_context_properties_match, self);
+                        lsp_warn("Failed to obtain context properties");
+                        return STATUS_UNKNOWN_ERR;
                     }
+
+                    res = back->sContextDict.put(context_props);
+                    if (res != STATUS_OK)
+                    {
+                        lsp_warn("Failed to synchronize context dictionary, code=%d", int(res));
+                        return res;
+                    }
+
+                    pw_context_conf_section_match_rules(
+                        back->pContext, "client.rules",
+                        back->sContextDict.dict(), execute_context_properties_match, self);
+
                     lsp_trace("Context dictionary:\n%s", back->sContextDict.to_string());
+
+                    // Update I/O parameters
+                    io_parameters_t * const io = &back->sIOParams;
+                    io->buffer_size         = pw_properties_get_uint32(context_props, "default.clock.quantum", 1024);
+                    io->max_buffer_size     = pw_properties_get_uint32(context_props, "default.clock.quantum-limit", 8192);
+                    io->sample_rate         = pw_properties_get_uint32(context_props, "default.clock.rate", 48000);
                 }
 
                 // Thread utils interface
@@ -467,10 +476,16 @@ namespace lsp
 
                     // Setup properties
                     {
+                        char node_latency[16];
+                        char node_rate[16];
                         const char *key_node_group = back->sContextDict.value(
                             PW_KEY_NODE_GROUP,
                             back->sClientDict.value(
                                 PW_KEY_NODE_GROUP, "group.dsp.0"));
+
+                        snprintf(node_latency, sizeof(node_latency), "0/%d", int(back->sIOParams.sample_rate));
+                        snprintf(node_rate, sizeof(node_rate), "1/%d", int(back->sIOParams.sample_rate));
+
                         res = back->sClientDict.put(
                             PW_KEY_NODE_NAME, back->sClientName,
                             PW_KEY_NODE_GROUP, key_node_group,
@@ -478,8 +493,9 @@ namespace lsp
                             PW_KEY_MEDIA_TYPE, "Audio",
                             PW_KEY_MEDIA_CATEGORY, "Duplex",
                             PW_KEY_MEDIA_ROLE, "DSP",
+                            PW_KEY_NODE_LATENCY, node_latency,
+                            PW_KEY_NODE_RATE, node_rate,
                             PW_KEY_NODE_ALWAYS_PROCESS, prop_true,
-                            PW_KEY_NODE_LOCK_QUANTUM, prop_true,
                             PW_KEY_NODE_TRANSPORT_SYNC, prop_true);
                         if (res != STATUS_OK)
                         {
@@ -533,10 +549,6 @@ namespace lsp
                     }
 
                     back->sNodeInfo.change_mask = 0;
-
-                    // Reset transport
-                    back->nSyncRequestId            = -EINVAL;
-                    back->nSyncResponseId           = -EINVAL;
                 }
 
                 // Issue sync request
@@ -588,7 +600,11 @@ namespace lsp
                             back->pRegistry = NULL;
                         }
 
-                        // Destro core
+                        // Release memory mappings
+                        back->mmPosition.free();
+                        back->mmClock.free();
+
+                        // Destroy core
                         if (back->pCore != NULL)
                         {
                             spa_hook_remove(&back->vHooks[HOOK_CORE]);
@@ -757,6 +773,12 @@ namespace lsp
             {
                 lsp_trace("self=%p, id=%d, permissions=0x%x, type:%s/%d, props=%p\n",
                     self, int(id), int(permissions), type, int(version), props);
+
+            #ifdef LSP_TRACE
+                dictionary dict;
+                if ((props) && (dict.set(props) == STATUS_OK))
+                    lsp_trace("Related properties:\n%s\n", dict.to_string());
+            #endif /* LSP_TRACE */
             }
 
             void backend_t::on_registry_event_removed(void *self, uint32_t id)
@@ -774,6 +796,12 @@ namespace lsp
                     self, int(info->id), int(info->cookie),
                     info->user_name, info->host_name, info->version, info->name,
                     static_cast<long long>(info->change_mask), info->props);
+
+            #ifdef LSP_TRACE
+                dictionary dict;
+                if ((info->props) && (dict.set(info->props) == STATUS_OK))
+                    lsp_trace("Core info properties:\n%s\n", dict.to_string());
+            #endif /* LSP_TRACE */
             }
 
             void backend_t::on_core_done(void *self, uint32_t id, int seq)
@@ -826,41 +854,47 @@ namespace lsp
             {
                 lsp_trace("self=%p, id=%d, global_id=%d, props=%p",
                     self, int(id), int(global_id), props);
+
+        #ifdef LSP_TRACE
+            dictionary dict;
+            if ((props) && (dict.set(props) == STATUS_OK))
+                lsp_trace("Core bound properties:\n%s\n", dict.to_string());
+        #endif /* LSP_TRACE */
             }
         #endif /* PIPEWIRE_HAS_BOUND_PROPS */
 
             spa_thread *backend_t::on_thread_create(void *self, const spa_dict *props, void *(*start)(void*), void *arg)
             {
                 backend_t * const back = cast(self);
-                return ((back != NULL) && (back->pOldThreadUtils != NULL)) ?
+                return (back->pOldThreadUtils != NULL) ?
                     spa_thread_utils_create(back->pOldThreadUtils, props, start, arg) : NULL;
             }
 
             int backend_t::on_thread_join(void *self, struct spa_thread *thread, void **retval)
             {
                 backend_t * const back = cast(self);
-                return ((back != NULL) && (back->pOldThreadUtils != NULL)) ?
+                return (back->pOldThreadUtils != NULL) ?
                     spa_thread_utils_join(back->pOldThreadUtils, thread, retval) : -EINVAL;
             }
 
             int backend_t::on_thread_get_rt_range(void *self, const struct spa_dict *props, int *min, int *max)
             {
                 backend_t * const back = cast(self);
-                return ((back != NULL) && (back->pOldThreadUtils != NULL)) ?
+                return (back->pOldThreadUtils != NULL) ?
                     spa_thread_utils_get_rt_range(back->pOldThreadUtils, props, min, max) : -EINVAL;
             }
 
             int backend_t::on_thread_acquire_rt(void *self, struct spa_thread *thread, int priority)
             {
                 backend_t * const back = cast(self);
-                return ((back != NULL) && (back->pOldThreadUtils != NULL)) ?
+                return (back->pOldThreadUtils != NULL) ?
                     spa_thread_utils_acquire_rt(back->pOldThreadUtils, thread, priority) : -EINVAL;
             }
 
             int backend_t::on_thread_drop_rt(void *self, struct spa_thread *thread)
             {
                 backend_t * const back = cast(self);
-                return ((back != NULL) && (back->pOldThreadUtils != NULL)) ?
+                return (back->pOldThreadUtils != NULL) ?
                     spa_thread_utils_drop_rt(back->pOldThreadUtils, thread) : -EINVAL;
             }
 
@@ -878,7 +912,43 @@ namespace lsp
 
             int backend_t::on_node_set_io(void *self, uint32_t id, uint32_t mem_id, uint32_t offset, uint32_t size)
             {
-                lsp_trace("self = %p", self);
+            #ifdef LSP_TRACE
+                const char *id_desc = "unknown";
+                #define DECODE(value) \
+                    case value: id_desc=LSP_STRINGIFY(value); break;
+                switch (id)
+                {
+                    DECODE(SPA_IO_Invalid)
+                    DECODE(SPA_IO_Buffers)
+                    DECODE(SPA_IO_Range)
+                    DECODE(SPA_IO_Clock)
+                    DECODE(SPA_IO_Latency)
+                    DECODE(SPA_IO_Control)
+                    DECODE(SPA_IO_Notify)
+                    DECODE(SPA_IO_Position)
+                    DECODE(SPA_IO_RateMatch)
+                    DECODE(SPA_IO_Memory)
+                    DECODE(SPA_IO_AsyncBuffers)
+                    default: break;
+                }
+                #undef DECODE
+                lsp_trace("self = %p, id=%d (%s), mem_id=%d, offset=%d, size=%d",
+                    self, int(id), id_desc, int(mem_id), int(offset), int(size));
+            #endif /* LSP_TRACE */
+
+                backend_t * const back = cast(self);
+                switch (id)
+                {
+                    case SPA_IO_Clock:
+                        back->mmClock.remap(back, mem_id, offset, size);
+                        break;
+                    case SPA_IO_Position:
+                        back->mmPosition.remap(back, mem_id, offset, size);
+                        break;
+                    default:
+                        break;
+                }
+
                 return 0;
             }
 
@@ -926,7 +996,12 @@ namespace lsp
 
             int backend_t::on_node_set_activation(void *self, uint32_t node_id, int signalfd, uint32_t mem_id, uint32_t offset, uint32_t size)
             {
-                lsp_trace("self = %p", self);
+                backend_t * const back = cast(self);
+                lsp_trace("Activation self=%p (%s), node_id=%d, signalfd=%d, mem_id=%d, offset=%d, size=%d",
+                    self,
+                    (back->nNodeGlobalId == node_id) ? "our" : "set",
+                    int(node_id), int(signalfd), int(mem_id), int(offset), int(size));
+
                 return 0;
             }
 
@@ -943,7 +1018,9 @@ namespace lsp
 
             void backend_t::on_node_bound(void *self, uint32_t global_id)
             {
-                lsp_trace("self = %p", self);
+                backend_t * const back  = cast(self);
+                back->nNodeGlobalId     = global_id;
+                lsp_trace("PipeWire node bound with global_id=%d", int(global_id));
             }
 
             void backend_t::on_node_removed(void *self)
@@ -964,6 +1041,12 @@ namespace lsp
             void backend_t::on_node_bound_props(void *self, uint32_t global_id, const struct spa_dict *props)
             {
                 lsp_trace("self = %p", self);
+
+            #ifdef LSP_TRACE
+                dictionary dict;
+                if ((props) && (dict.set(props) == STATUS_OK))
+                    lsp_trace("Node bound properties:\n%s\n", dict.to_string());
+            #endif /* LSP_TRACE */
             }
 
             void backend_t::on_notify_event(void *self, uint64_t count)
@@ -976,8 +1059,6 @@ namespace lsp
                 lsp_trace("self = %p", self);
 
                 backend_t * const back = cast(self);
-                if ((back == NULL) || (location == NULL) || (action == NULL) || (val == NULL))
-                    return -EINVAL;
 
                 if (strcmp(action, "update-props") == 0)
                 {

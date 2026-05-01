@@ -38,7 +38,7 @@ namespace lsp
     {
         namespace pipewire
         {
-            struct dictionary
+            typedef struct dictionary
             {
                 protected:
                     spa_dict        sData;
@@ -135,7 +135,7 @@ namespace lsp
                         const status_t res = put(props);
                         return (res == STATUS_OK) ? put(lsp::forward<A>(args)...) : res;
                     }
-            };
+            } dictionary;
 
         } /* namespace pipewire */
     } /* namespace audio */

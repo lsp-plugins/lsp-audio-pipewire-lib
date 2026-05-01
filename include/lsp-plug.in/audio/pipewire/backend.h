@@ -26,6 +26,7 @@
 
 #include <lsp-plug.in/audio/iface/backend.h>
 #include <lsp-plug.in/audio/pipewire/dictionary.h>
+#include <lsp-plug.in/audio/pipewire/memmap.h>
 
 #include <pipewire/pipewire.h>
 #include <pipewire/extensions/client-node.h>
@@ -45,7 +46,7 @@ namespace lsp
             typedef struct LSP_HIDDEN_MODIFIER backend_t: public audio::backend_t
             {
                 protected:
-                    enum spa_hook_type
+                    enum spa_hook_type_t
                     {
                         HOOK_CORE,
                         HOOK_REGISTRY,
@@ -54,6 +55,9 @@ namespace lsp
 
                         HOOK_TOTAL
                     };
+
+                    typedef memmap<spa_io_position>     mm_io_position;
+                    typedef memmap<spa_io_clock>        mm_io_clock;
 
                 protected:
                     static const pw_registry_events         registry_events;
@@ -87,12 +91,15 @@ namespace lsp
                     spa_node_info       sNodeInfo;
                     spa_ringbuffer      sNotifyRing;
                     spa_hook            vHooks[HOOK_TOTAL];
+                    mm_io_position      mmPosition;
+                    mm_io_clock         mmClock;
 
                     void               *pUserData;
                     const callbacks_t  *pCallbacks;
                     io_parameters_t     sIOParams;
                     io_position_t       sIOPosition;
                     uint32_t            nLatency;
+                    uint32_t            nNodeGlobalId;
                     int                 nSyncRequestId;
                     int                 nSyncResponseId;
 
@@ -162,7 +169,7 @@ namespace lsp
                     // PipeWire miscellaneous processing
                     static int execute_context_properties_match(void *self, const char *location, const char *action, const char *val, size_t len);
 
-                protected:
+                public:
                     int                 perform_sync();
 
                 public:

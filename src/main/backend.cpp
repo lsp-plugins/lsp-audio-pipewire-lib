@@ -214,42 +214,31 @@ namespace lsp
                 #undef AUDIO_PIPEWIRE_BACKEND_EXP
             }
 
-            status_t backend_t::connect(
-                audio::backend_t *self,
+            status_t backend_t::make_connection(
                 const connection_params_t *params,
                 const callbacks_t *callbacks,
                 void *user_data)
             {
                 int error;
                 status_t res;
-                backend_t * const back = cast(self);
-
-                // Check that backend is disconnected
-                if (back->pAudioLoop != NULL)
-                    return STATUS_BAD_STATE;
 
                 if (params->client_name == NULL)
                     return STATUS_BAD_ARGUMENTS;
 
                 // Reset parameters
-                back->nNodeGlobalId             = SPA_ID_INVALID;
-                back->nLatency                  = 0;
-                back->nSyncRequestId            = -EINVAL;
-                back->nSyncResponseId           = -EINVAL;
+                nNodeGlobalId       = SPA_ID_INVALID;
+                nLatency            = 0;
+                nSyncRequestId      = -EINVAL;
+                nSyncResponseId     = -EINVAL;
+                pUserData           = user_data;
+                pCallbacks          = callbacks;
 
-                back->mmPosition.construct();
-                back->mmClock.construct();
-
-                // Set-up destruction hook
-                bool success = false;
-                lsp_finally {
-                    if (!success)
-                        disconnect(self);
-                };
+                mmPosition.construct();
+                mmClock.construct();
 
                 // Fill client name
-                back->sClientName   = strdup(params->client_name);
-                if (back->sClientName == NULL)
+                sClientName             = strdup(params->client_name);
+                if (sClientName == NULL)
                 {
                     lsp_warn("Failed to allocate client name string");
                     return STATUS_NO_MEM;
@@ -260,8 +249,8 @@ namespace lsp
                     ((strlen(params->url) == 0) ||
                     (strcmp(params->url, "default") != 0)))
                 {
-                    back->sServerName   = strdup(params->url);
-                    if (back->sServerName == NULL)
+                    sServerName         = strdup(params->url);
+                    if (sServerName == NULL)
                     {
                         lsp_warn("Failed to allocate server name string");
                         return STATUS_NO_MEM;
@@ -269,24 +258,24 @@ namespace lsp
                 }
 
                 // Allocate notification buffer
-                back->pNotifyBuffer     = calloc(1, NOTIFY_BUFFER_SIZE);
-                if (back->pNotifyBuffer == NULL)
+                pNotifyBuffer       = calloc(1, NOTIFY_BUFFER_SIZE);
+                if (pNotifyBuffer == NULL)
                 {
                     lsp_warn("Failed to allocate notification buffer");
                     return STATUS_NO_MEM;
                 }
 
                 // Create mutex
-//                back->pDataMutex = new ipc::Mutex();
-//                if (back->pDataMutex == NULL)
+//                pDataMutex = new ipc::Mutex();
+//                if (pDataMutex == NULL)
 //                    return STATUS_NO_MEM;
 
                 // Create context properties
-                res = back->sClientDict.put(
+                res = sClientDict.put(
                     PW_KEY_LOOP_CANCEL, prop_false,
                     SPA_KEY_THREAD_RESET_ON_FORK, prop_false,
-                    PW_KEY_REMOTE_NAME, back->sServerName,
-                    PW_KEY_CLIENT_NAME, back->sClientName,
+                    PW_KEY_REMOTE_NAME, sServerName,
+                    PW_KEY_CLIENT_NAME, sClientName,
                     PW_KEY_CLIENT_API, "native",
                     PW_KEY_CONFIG_NAME, "client.conf",
                     PW_KEY_MEDIA_TYPE, BACKEND_MEDIA_TYPE,
@@ -299,26 +288,26 @@ namespace lsp
                 }
 
                 // Create context thread loop
-                back->pContextThreadLoop = pw_thread_loop_new(back->sClientName, NULL);
-                if (back->pContextThreadLoop == NULL)
+                pContextThreadLoop  = pw_thread_loop_new(sClientName, NULL);
+                if (pContextThreadLoop == NULL)
                 {
                     lsp_warn("Failed to create PipeWire context thread loop");
                     return STATUS_UNKNOWN_ERR;
                 }
-                back->pContextLoop = pw_thread_loop_get_loop(back->pContextThreadLoop);
+                pContextLoop = pw_thread_loop_get_loop(pContextThreadLoop);
 
                 // Create context
                 {
-                    lsp_trace("Context properties:\n%s\n", back->sClientDict.to_string());
+                    lsp_trace("Context properties:\n%s\n", sClientDict.to_string());
 
-                    pw_properties * const context_props = back->sClientDict.make_properties();
+                    pw_properties * const context_props = sClientDict.make_properties();
                     if (context_props == NULL)
                     {
                         lsp_warn("Failed to create context properties");
                         return STATUS_NO_MEM;
                     }
-                    back->pContext = pw_context_new(back->pContextLoop, context_props, 0);
-                    if (back->pContext == NULL)
+                    pContext            = pw_context_new(pContextLoop, context_props, 0);
+                    if (pContext == NULL)
                     {
                         lsp_warn("Failed to create PipeWire context");
                         pw_properties_free(context_props);
@@ -327,24 +316,24 @@ namespace lsp
                 }
 
                 // Create notify thread loop
-                back->pNotifyThreadLoop = pw_thread_loop_new(back->sClientName, NULL);
-                if (back->pNotifyThreadLoop == NULL)
+                pNotifyThreadLoop   = pw_thread_loop_new(sClientName, NULL);
+                if (pNotifyThreadLoop == NULL)
                 {
                     lsp_warn("Failed to create PipeWire notification thread loop");
                     return STATUS_DISCONNECTED;
                 }
-                back->pNotifyLoop       = pw_thread_loop_get_loop(back->pNotifyThreadLoop);
-                back->pNotifySource     = pw_loop_add_event(back->pNotifyLoop, on_notify_event, back);
-                if (back->pNotifySource == NULL)
+                pNotifyLoop         = pw_thread_loop_get_loop(pNotifyThreadLoop);
+                pNotifySource       = pw_loop_add_event(pNotifyLoop, on_notify_event, this);
+                if (pNotifySource == NULL)
                 {
                     lsp_warn("Failed to add PipeWire notification source");
                     return STATUS_DISCONNECTED;
                 }
-                spa_ringbuffer_init(&back->sNotifyRing);
+                spa_ringbuffer_init(&sNotifyRing);
 
                 // Update client properties
                 {
-                    pw_properties * const client_props = back->sClientDict.make_properties();
+                    pw_properties * const client_props = sClientDict.make_properties();
                     if (client_props == NULL)
                     {
                         lsp_warn("Failed to allocate client properties");
@@ -352,33 +341,33 @@ namespace lsp
                     }
                     lsp_finally { pw_properties_free(client_props); };
 
-                    error = pw_context_conf_update_props(back->pContext, "filter.properties", client_props);
+                    error = pw_context_conf_update_props(pContext, "filter.properties", client_props);
                     if (error < 0)
                     {
                         lsp_warn("Failed to fetch context properties: code=%d", -error);
                         return STATUS_DISCONNECTED;
                     }
 
-                    res = back->sClientDict.put(client_props);
+                    res = sClientDict.put(client_props);
                     if (res != STATUS_OK)
                     {
                         lsp_warn("Failed to synchronize client dictionary, code=%d", int(res));
                         return res;
                     }
 
-                    lsp_trace("Client dictionary:\n%s\n", back->sClientDict.to_string());
+                    lsp_trace("Client dictionary:\n%s\n", sClientDict.to_string());
                 }
 
                 // Fetch context properties
                 {
-                    const pw_properties * const context_props = pw_context_get_properties(back->pContext);
+                    const pw_properties * const context_props = pw_context_get_properties(pContext);
                     if (context_props == NULL)
                     {
                         lsp_warn("Failed to obtain context properties");
                         return STATUS_UNKNOWN_ERR;
                     }
 
-                    res = back->sContextDict.put(context_props);
+                    res = sContextDict.put(context_props);
                     if (res != STATUS_OK)
                     {
                         lsp_warn("Failed to synchronize context dictionary, code=%d", int(res));
@@ -386,42 +375,42 @@ namespace lsp
                     }
 
                     pw_context_conf_section_match_rules(
-                        back->pContext, "client.rules",
-                        back->sContextDict.dict(), execute_context_properties_match, self);
+                        pContext, "client.rules",
+                        sContextDict.dict(), execute_context_properties_match, this);
 
-                    lsp_trace("Context dictionary:\n%s", back->sContextDict.to_string());
+                    lsp_trace("Context dictionary:\n%s", sContextDict.to_string());
 
                     // Update I/O parameters
-                    io_parameters_t * const io = &back->sIOParams;
+                    io_parameters_t * const io = &sIOParams;
                     io->buffer_size         = pw_properties_get_uint32(context_props, "default.clock.quantum", 1024);
                     io->max_buffer_size     = pw_properties_get_uint32(context_props, "default.clock.quantum-limit", 8192);
                     io->sample_rate         = pw_properties_get_uint32(context_props, "default.clock.rate", 48000);
                 }
 
                 // Thread utils interface
-                back->pOldThreadUtils   = static_cast<spa_thread_utils *>(pw_context_get_object(back->pContext, SPA_TYPE_INTERFACE_ThreadUtils));
-                if (back->pOldThreadUtils == NULL)
-                    back->pOldThreadUtils = pw_thread_utils_get();
+                pOldThreadUtils   = static_cast<spa_thread_utils *>(pw_context_get_object(pContext, SPA_TYPE_INTERFACE_ThreadUtils));
+                if (pOldThreadUtils == NULL)
+                    pOldThreadUtils = pw_thread_utils_get();
 
-                back->sThreadUtils      = spa_thread_utils {
+                sThreadUtils      = spa_thread_utils {
                     SPA_INTERFACE_INIT(
                         SPA_TYPE_INTERFACE_ThreadUtils,
                         SPA_VERSION_THREAD_UTILS,
-                        &thread_utils_impl, self)
+                        &thread_utils_impl, this)
                 };
 
                 pw_context_set_object(
-                    back->pContext,
+                    pContext,
                     SPA_TYPE_INTERFACE_ThreadUtils,
-                    &back->sThreadUtils);
+                    &sThreadUtils);
 
                 // Stop audio data loop
-                back->pAudioDataLoop    = pw_context_get_data_loop(back->pContext);
-                back->pAudioLoop        = pw_data_loop_get_loop(back->pAudioDataLoop);
-                pw_data_loop_stop(back->pAudioDataLoop);
+                pAudioDataLoop    = pw_context_get_data_loop(pContext);
+                pAudioLoop        = pw_data_loop_get_loop(pAudioDataLoop);
+                pw_data_loop_stop(pAudioDataLoop);
 
                 // Start context thread loop
-                error = pw_thread_loop_start(back->pContextThreadLoop);
+                error = pw_thread_loop_start(pContextThreadLoop);
                 if (error < 0)
                 {
                     lsp_warn("Failed to start context thread loop: code=%d", -error);
@@ -429,23 +418,23 @@ namespace lsp
                 }
 
                 {
-                    pw_thread_loop_lock(back->pContextThreadLoop);
-                    lsp_finally { pw_thread_loop_unlock(back->pContextThreadLoop); };
+                    pw_thread_loop_lock(pContextThreadLoop);
+                    lsp_finally { pw_thread_loop_unlock(pContextThreadLoop); };
 
                     // Connect to PipeWire Core and add Core listener
                     {
-                        pw_properties * const core_properties = back->sClientDict.make_properties();
+                        pw_properties * const core_properties = sClientDict.make_properties();
                         if (core_properties == NULL)
                             return STATUS_NO_MEM;
-                        back->pCore             = pw_context_connect(back->pContext, core_properties, 0);
-                        if (back->pCore == NULL)
+                        pCore             = pw_context_connect(pContext, core_properties, 0);
+                        if (pCore == NULL)
                         {
                             lsp_warn("Could not connect to PipeWire");
                             pw_properties_free(core_properties);
                             return STATUS_DISCONNECTED;
                         }
                     }
-                    error = pw_core_add_listener(back->pCore, &back->vHooks[HOOK_CORE], &core_events, back);
+                    error = pw_core_add_listener(pCore, &vHooks[HOOK_CORE], &core_events, this);
                     if (error < 0)
                     {
                         lsp_warn("Failed to add core listener: code=%d", -error);
@@ -453,21 +442,21 @@ namespace lsp
                     }
 
                     // Get memory pool
-                    back->pMemPool  = pw_core_get_mempool(back->pCore);
-                    if (back->pMemPool == NULL)
+                    pMemPool  = pw_core_get_mempool(pCore);
+                    if (pMemPool == NULL)
                     {
                         lsp_warn("Could not obtain memory pool");
                         return STATUS_DISCONNECTED;
                     }
 
                     // Get Registry and add Registry listener
-                    back->pRegistry = pw_core_get_registry(back->pCore, PW_VERSION_REGISTRY, 0);
-                    if (back->pRegistry == NULL)
+                    pRegistry = pw_core_get_registry(pCore, PW_VERSION_REGISTRY, 0);
+                    if (pRegistry == NULL)
                     {
                         lsp_warn("Failed to obtain PipeWire registry");
                         return STATUS_DISCONNECTED;
                     }
-                    error = pw_registry_add_listener(back->pRegistry, &back->vHooks[HOOK_REGISTRY], &registry_events, back);
+                    error = pw_registry_add_listener(pRegistry, &vHooks[HOOK_REGISTRY], &registry_events, this);
                     if (error < 0)
                     {
                         lsp_warn("Failed to add registry listener: code=%d", -error);
@@ -478,18 +467,18 @@ namespace lsp
                     {
                         char node_latency[16];
                         char node_rate[16];
-                        const char *key_node_group = back->sContextDict.value(
+                        const char *key_node_group = sContextDict.value(
                             PW_KEY_NODE_GROUP,
-                            back->sClientDict.value(
+                            sClientDict.value(
                                 PW_KEY_NODE_GROUP, "group.dsp.0"));
 
-                        snprintf(node_latency, sizeof(node_latency), "0/%d", int(back->sIOParams.sample_rate));
-                        snprintf(node_rate, sizeof(node_rate), "1/%d", int(back->sIOParams.sample_rate));
+                        snprintf(node_latency, sizeof(node_latency), "0/%d", int(sIOParams.sample_rate));
+                        snprintf(node_rate, sizeof(node_rate), "1/%d", int(sIOParams.sample_rate));
 
-                        res = back->sClientDict.put(
-                            PW_KEY_NODE_NAME, back->sClientName,
+                        res = sClientDict.put(
+                            PW_KEY_NODE_NAME, sClientName,
                             PW_KEY_NODE_GROUP, key_node_group,
-                            PW_KEY_NODE_DESCRIPTION, back->sClientName,
+                            PW_KEY_NODE_DESCRIPTION, sClientName,
                             PW_KEY_MEDIA_TYPE, "Audio",
                             PW_KEY_MEDIA_CATEGORY, "Duplex",
                             PW_KEY_MEDIA_ROLE, "DSP",
@@ -503,56 +492,56 @@ namespace lsp
                             return res;
                         }
 
-                        lsp_trace("Node dictionary:\n%s", back->sClientDict.to_string());
+                        lsp_trace("Node dictionary:\n%s", sClientDict.to_string());
                     }
 
                     // Create client node
-                    back->pNode = static_cast<pw_client_node *>(
+                    pNode = static_cast<pw_client_node *>(
                         pw_core_create_object(
-                            back->pCore,
+                            pCore,
                             "client-node",
                             PW_TYPE_INTERFACE_ClientNode,
                             PW_VERSION_CLIENT_NODE,
-                            back->sClientDict.dict(),
+                            sClientDict.dict(),
                             0));
-                    if (back->pNode == NULL)
+                    if (pNode == NULL)
                     {
                         lsp_warn("Could not create PipeWire node");
                         return STATUS_DISCONNECTED;
                     }
-                    error = pw_client_node_add_listener(back->pNode, &back->vHooks[HOOK_NODE], &node_events, back);
+                    error = pw_client_node_add_listener(pNode, &vHooks[HOOK_NODE], &node_events, this);
                     if (error < 0)
                     {
                         lsp_warn("Failed to add node listener: code=%d", -error);
                         return STATUS_DISCONNECTED;
                     }
                     pw_proxy_add_listener(
-                        reinterpret_cast<pw_proxy *>(back->pNode),
-                        &back->vHooks[HOOK_NODE_PROXY], &node_proxy_events, back);
+                        reinterpret_cast<pw_proxy *>(pNode),
+                        &vHooks[HOOK_NODE_PROXY], &node_proxy_events, this);
 
                     // Update node information
-                    back->sNodeInfo = SPA_NODE_INFO_INIT();
-                    back->sNodeInfo.max_input_ports = UINT32_MAX;
-                    back->sNodeInfo.max_output_ports = UINT32_MAX;
-                    back->sNodeInfo.change_mask = SPA_NODE_CHANGE_MASK_FLAGS | SPA_NODE_CHANGE_MASK_PROPS;
-                    back->sNodeInfo.flags = SPA_NODE_FLAG_RT;
-                    back->sNodeInfo.props = const_cast<spa_dict *>(back->sClientDict.dict());
+                    sNodeInfo = SPA_NODE_INFO_INIT();
+                    sNodeInfo.max_input_ports = UINT32_MAX;
+                    sNodeInfo.max_output_ports = UINT32_MAX;
+                    sNodeInfo.change_mask = SPA_NODE_CHANGE_MASK_FLAGS | SPA_NODE_CHANGE_MASK_PROPS;
+                    sNodeInfo.flags = SPA_NODE_FLAG_RT;
+                    sNodeInfo.props = const_cast<spa_dict *>(sClientDict.dict());
 
                     error = pw_client_node_update(
-                        back->pNode,
+                        pNode,
                         PW_CLIENT_NODE_UPDATE_INFO,
-                        0, NULL, &back->sNodeInfo);
+                        0, NULL, &sNodeInfo);
                     if (error < 0)
                     {
                         lsp_warn("Failed to update client node, code=%d", -error);
                         return STATUS_DISCONNECTED;
                     }
 
-                    back->sNodeInfo.change_mask = 0;
+                    sNodeInfo.change_mask = 0;
                 }
 
                 // Issue sync request
-                error = back->perform_sync();
+                error = perform_sync();
                 if (error < 0)
                 {
                     lsp_warn("Failed to synchrnonize with PipeWire server: code=%d", -error);
@@ -560,12 +549,151 @@ namespace lsp
                 }
 
                 // Start notification thread loop
-                error = pw_thread_loop_start(back->pNotifyThreadLoop);
+                error = pw_thread_loop_start(pNotifyThreadLoop);
                 if (error < 0)
                 {
                     lsp_warn("Failed to start notify thread loop: code=%d", -error);
                     return STATUS_DISCONNECTED;
                 }
+
+                return STATUS_OK;
+            }
+
+            void backend_t::do_disconnect()
+            {
+                if (pContextThreadLoop != NULL)
+                {
+                    // Destroy all related objects
+                    {
+                        pw_thread_loop_lock(pContextThreadLoop);
+                        lsp_finally { pw_thread_loop_unlock(pContextThreadLoop); };
+
+                        // Destroy node
+                        if (pNode != NULL)
+                        {
+                            spa_hook_remove(&vHooks[HOOK_NODE_PROXY]);
+                            spa_hook_remove(&vHooks[HOOK_NODE]);
+                            pw_proxy_destroy(to_pw_proxy(pNode));
+                        }
+
+                        // Destroy registry
+                        if (pRegistry != NULL)
+                        {
+                            spa_hook_remove(&vHooks[HOOK_REGISTRY]);
+                            pw_proxy_destroy(to_pw_proxy(pRegistry));
+                            pRegistry = NULL;
+                        }
+
+                        // Release memory mappings
+                        mmPosition.free();
+                        mmClock.free();
+
+                        // Destroy core
+                        if (pCore != NULL)
+                        {
+                            spa_hook_remove(&vHooks[HOOK_CORE]);
+                            pw_core_disconnect(pCore);
+                            pCore     = NULL;
+                        }
+                        pMemPool  = NULL;
+
+                        // Destroy context
+                        if (pContext != NULL)
+                        {
+                            pw_context_destroy(pContext);
+                            pContext = NULL;
+                        }
+                    }
+
+                    pw_thread_loop_stop(pContextThreadLoop);
+                }
+
+                pAudioLoop = NULL;
+                pAudioDataLoop = NULL;
+
+                if (pNotifyThreadLoop != NULL)
+                {
+                    pw_thread_loop_destroy(pNotifyThreadLoop);
+                    pNotifyThreadLoop = NULL;
+                    pNotifyLoop = NULL;
+                }
+
+                if (pContextThreadLoop != NULL)
+                {
+                    pw_thread_loop_destroy(pContextThreadLoop);
+                    pContextThreadLoop = NULL;
+                    pContextLoop = NULL;
+                }
+
+//                if (pDataMutex != NULL)
+//                {
+//                    delete pDataMutex;
+//                    pDataMutex = NULL;
+//                }
+
+                if (pNotifyBuffer != NULL)
+                {
+                    free(pNotifyBuffer);
+                    pNotifyBuffer = NULL;
+                }
+
+                if (sServerName != NULL)
+                {
+                    free(sServerName);
+                    sServerName = NULL;
+                }
+
+                if (sClientName != NULL)
+                {
+                    free(sClientName);
+                    sClientName = NULL;
+                }
+
+                sClientDict.destroy();
+                sContextDict.destroy();
+                bzero(&sThreadUtils, sizeof(sThreadUtils));
+                bzero(&sNodeInfo, sizeof(sNodeInfo));
+                bzero(&sNotifyRing, sizeof(sNotifyRing));
+                bzero(vHooks, sizeof(spa_hook) * HOOK_TOTAL);
+
+                pCallbacks      = NULL;
+                pUserData       = NULL;
+            }
+
+            status_t backend_t::connect(
+                audio::backend_t *self,
+                const connection_params_t *params,
+                const callbacks_t *callbacks,
+                void *user_data)
+            {
+                backend_t * const back = cast(self);
+
+                // Check that backend is disconnected
+                if (back->pAudioLoop != NULL)
+                    return STATUS_BAD_STATE;
+
+                // Set-up destruction hook
+                bool success = false;
+                lsp_finally {
+                    if (!success)
+                        back->do_disconnect();
+                };
+
+                // Make connection
+                status_t res        = back->make_connection(params, callbacks, user_data);
+                if (res != STATUS_OK)
+                    return res;
+
+                // Issue connected callback
+                res = ((callbacks) && (callbacks->on_connected)) ?
+                    callbacks->on_connected(user_data, &back->sIOParams) :
+                    STATUS_OK;
+                lsp_finally {
+                    if ((!success) && (callbacks) && (callbacks->on_connection_lost))
+                        callbacks->on_connection_lost(user_data);
+                };
+                if (res != STATUS_OK)
+                    return res;
 
                 // Return success result
                 success             = true;
@@ -575,104 +703,24 @@ namespace lsp
 
             status_t backend_t::disconnect(audio::backend_t *self)
             {
+                if (self == NULL)
+                    return STATUS_BAD_ARGUMENTS;
+
+                // Ensure that we are connected
                 backend_t * const back = cast(self);
+                if (back->pAudioLoop == NULL)
+                    return STATUS_BAD_STATE;
 
-                if (back->pContextThreadLoop != NULL)
-                {
-                    // Destroy all related objects
-                    {
-                        pw_thread_loop_lock(back->pContextThreadLoop);
-                        lsp_finally { pw_thread_loop_unlock(back->pContextThreadLoop); };
+                // Get callbacks table and user data
+                const callbacks_t * const cb    = back->pCallbacks;
+                void * const user_data          = back->pUserData;
 
-                        // Destroy node
-                        if (back->pNode != NULL)
-                        {
-                            spa_hook_remove(&back->vHooks[HOOK_NODE_PROXY]);
-                            spa_hook_remove(&back->vHooks[HOOK_NODE]);
-                            pw_proxy_destroy(to_pw_proxy(back->pNode));
-                        }
+                // Close client connection
+                back->do_disconnect();
+                if ((cb) && (cb->on_disconnected))
+                    cb->on_disconnected(user_data);
 
-                        // Destroy registry
-                        if (back->pRegistry != NULL)
-                        {
-                            spa_hook_remove(&back->vHooks[HOOK_REGISTRY]);
-                            pw_proxy_destroy(to_pw_proxy(back->pRegistry));
-                            back->pRegistry = NULL;
-                        }
-
-                        // Release memory mappings
-                        back->mmPosition.free();
-                        back->mmClock.free();
-
-                        // Destroy core
-                        if (back->pCore != NULL)
-                        {
-                            spa_hook_remove(&back->vHooks[HOOK_CORE]);
-                            pw_core_disconnect(back->pCore);
-                            back->pCore     = NULL;
-                        }
-                        back->pMemPool  = NULL;
-
-                        // Destroy context
-                        if (back->pContext != NULL)
-                        {
-                            pw_context_destroy(back->pContext);
-                            back->pContext = NULL;
-                        }
-                    }
-
-                    pw_thread_loop_stop(back->pContextThreadLoop);
-                }
-
-                back->pAudioLoop = NULL;
-                back->pAudioDataLoop = NULL;
-
-                if (back->pNotifyThreadLoop != NULL)
-                {
-                    pw_thread_loop_destroy(back->pNotifyThreadLoop);
-                    back->pNotifyThreadLoop = NULL;
-                    back->pNotifyLoop = NULL;
-                }
-
-                if (back->pContextThreadLoop != NULL)
-                {
-                    pw_thread_loop_destroy(back->pContextThreadLoop);
-                    back->pContextThreadLoop = NULL;
-                    back->pContextLoop = NULL;
-                }
-
-//                if (back->pDataMutex != NULL)
-//                {
-//                    delete back->pDataMutex;
-//                    back->pDataMutex = NULL;
-//                }
-
-                if (back->pNotifyBuffer != NULL)
-                {
-                    free(back->pNotifyBuffer);
-                    back->pNotifyBuffer = NULL;
-                }
-
-                if (back->sServerName != NULL)
-                {
-                    free(back->sServerName);
-                    back->sServerName = NULL;
-                }
-
-                if (back->sClientName != NULL)
-                {
-                    free(back->sClientName);
-                    back->sClientName = NULL;
-                }
-
-                back->sClientDict.destroy();
-                back->sContextDict.destroy();
-                bzero(&back->sThreadUtils, sizeof(back->sThreadUtils));
-                bzero(&back->sNodeInfo, sizeof(back->sNodeInfo));
-                bzero(&back->sNotifyRing, sizeof(back->sNotifyRing));
-                bzero(back->vHooks, sizeof(spa_hook) * HOOK_TOTAL);
-
-                return STATUS_NOT_IMPLEMENTED;
+                return STATUS_OK;
             }
 
             int backend_t::perform_sync()

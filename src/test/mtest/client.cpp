@@ -25,61 +25,82 @@
 
 MTEST_BEGIN("pipewire", client)
 
+    struct client_t
+    {
+        test_type_t                *test;
+        audio::pipewire::backend_t *back;
+        bool                        connected;
+    };
+
     static status_t on_connected(void *user_data, const audio::io_parameters_t *params)
     {
-        test_type_t * const self = static_cast<test_type_t *>(user_data);
-        self->printf("on_connected\n");
+        client_t * const client = static_cast<client_t *>(user_data);
+        client->test->printf(
+            "on_connected sample_rate=%d, buffer_size=%d, max_buffer_size=%d\n",
+            int(params->sample_rate), int(params->buffer_size), int(params->max_buffer_size));
+
+        client->connected       = true;
 
         return STATUS_OK;
     }
 
     static status_t on_activated(void *user_data)
     {
-        test_type_t * const self = static_cast<test_type_t *>(user_data);
-        self->printf("on_activated\n");
+        client_t * const client = static_cast<client_t *>(user_data);
+        client->test->printf("on_activated\n");
 
         return STATUS_OK;
     }
 
     static status_t on_io_changed(void *user_data, const audio::io_parameters_t *params)
     {
-        test_type_t * const self = static_cast<test_type_t *>(user_data);
-        self->printf("on_io_changed\n");
+        client_t * const client = static_cast<client_t *>(user_data);
+        client->test->printf("on_io_changed\n");
 
         return STATUS_OK;
     }
 
     static status_t on_process(void *user_data, const audio::io_position_t *position, uint32_t frames)
     {
-        test_type_t * const self = static_cast<test_type_t *>(user_data);
-        self->printf("on_process\n");
+        client_t * const client = static_cast<client_t *>(user_data);
+        client->test->printf("on_process\n");
 
         return STATUS_OK;
     }
 
     static status_t on_deactivated(void *user_data)
     {
-        test_type_t * const self = static_cast<test_type_t *>(user_data);
-        self->printf("on_deactivated\n");
+        client_t * const client = static_cast<client_t *>(user_data);
+        client->test->printf("on_deactivated\n");
 
         return STATUS_OK;
     }
 
     static void on_connection_lost(void *user_data)
     {
-        test_type_t * const self = static_cast<test_type_t *>(user_data);
-        self->printf("on_connection_lost\n");
+        client_t * const client = static_cast<client_t *>(user_data);
+        client->test->printf("on_connection_lost\n");
+
+        client->connected       = false;
     }
 
     static void on_disconnected(void *user_data)
     {
-        test_type_t * const self = static_cast<test_type_t *>(user_data);
-        self->printf("on_disconnected\n");
+        client_t * const client = static_cast<client_t *>(user_data);
+        client->test->printf("on_disconnected\n");
+
+        client->connected       = false;
     }
 
     MTEST_MAIN
     {
         using namespace audio;
+
+        // Init client
+        client_t client;
+        client.test         = this;
+        client.back         = NULL;
+        client.connected    = false;
 
         // Create backend
         printf("Creating backend...\n");
@@ -90,6 +111,7 @@ MTEST_BEGIN("pipewire", client)
                 back->destroy(back);
         };
         back->construct();
+        client.back         = back;
 
         // Connect backend to PipeWire
         printf("Connecting to PipeWire...\n");
@@ -108,11 +130,17 @@ MTEST_BEGIN("pipewire", client)
         params.client_name = "PipeWire Manual Test";
         params.url = "default";
 
-        MTEST_ASSERT(back->connect(back, &params, &backend_callbacks, this) == STATUS_OK);
+        MTEST_ASSERT(back->connect(back, &params, &backend_callbacks, &client) == STATUS_OK);
+
+        // Ensure that connection call-back has been issued
+        MTEST_ASSERT(client.connected == true);
 
         // Disconnect backend
         printf("Disconnecting from PipeWire...\n");
         MTEST_ASSERT(back->disconnect(back) == STATUS_OK);
+
+        // Ensure that disconnection call-back has been issued
+        MTEST_ASSERT(client.connected == false);
 
         // Destroy backend
         printf("Destroying backend...\n");

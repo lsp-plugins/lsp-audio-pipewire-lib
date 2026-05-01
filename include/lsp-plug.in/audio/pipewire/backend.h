@@ -169,8 +169,13 @@ namespace lsp
                     // PipeWire miscellaneous processing
                     static int execute_context_properties_match(void *self, const char *location, const char *action, const char *val, size_t len);
 
-                public:
+                protected:
                     int                 perform_sync();
+                    status_t            make_connection(
+                        const connection_params_t *params,
+                        const callbacks_t *callbacks,
+                        void *user_data);
+                    void                do_disconnect();
 
                 public:
                     static status_t     connect(

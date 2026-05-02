@@ -21,6 +21,8 @@
 
 #include <lsp-plug.in/audio/pipewire/pod.h>
 
+#include <lsp-plug.in/audio/pipewire/impl/pw-defs.h>
+
 #include <spa/node/io.h>
 #include <spa/param/audio/raw.h>
 #include <spa/param/format.h>

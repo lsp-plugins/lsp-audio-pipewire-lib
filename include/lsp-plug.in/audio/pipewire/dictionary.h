@@ -54,9 +54,9 @@ namespace lsp
                 public:
                     dictionary() noexcept;
                     dictionary(const dictionary &) = delete;
-                    dictionary(dictionary &&) = delete;
+                    dictionary(dictionary && src) noexcept;
                     dictionary & operator = (const dictionary &) = delete;
-                    dictionary & operator = (dictionary &&) = delete;
+                    dictionary & operator = (dictionary && src) noexcept;
                     ~dictionary() noexcept;
 
                     void                        construct() noexcept;

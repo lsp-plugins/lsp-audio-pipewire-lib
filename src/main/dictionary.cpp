@@ -35,9 +35,21 @@ namespace lsp
                 construct();
             }
 
+            dictionary::dictionary(dictionary && src) noexcept
+            {
+                construct();
+                swap(src);
+            }
+
             dictionary::~dictionary() noexcept
             {
                 destroy();
+            }
+
+            dictionary & dictionary::operator = (dictionary && src) noexcept
+            {
+                swap(src);
+                return *this;
             }
 
             void dictionary::construct() noexcept

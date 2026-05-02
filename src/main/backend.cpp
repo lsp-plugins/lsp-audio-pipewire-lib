@@ -30,22 +30,16 @@
 #include <lsp-plug.in/audio/pipewire/impl/cast.h>
 #include <lsp-plug.in/audio/pipewire/impl/memmap.h>
 #include <lsp-plug.in/audio/pipewire/impl/mutex.h>
+#include <lsp-plug.in/audio/pipewire/impl/pw-defs.h>
 
 #include <lsp-plug.in/stdlib/stdio.h>
 #include <lsp-plug.in/stdlib/stdlib.h>
 #include <lsp-plug.in/stdlib/string.h>
 
 #include <pipewire/thread.h>
+#include <spa/node/io.h>
 #include <spa/param/latency-utils.h>
 #include <spa/support/thread.h>
-
-#ifndef SPA_KEY_THREAD_RESET_ON_FORK
-    #define SPA_KEY_THREAD_RESET_ON_FORK    "thread.reset-on-fork"  /* reset priority and policy for real-time threads on fork. Default true */
-#endif /* SPA_KEY_THREAD_RESET_ON_FORK */
-
-#ifndef PW_KEY_LOOP_CANCEL
-    #define PW_KEY_LOOP_CANCEL              "loop.cancel"
-#endif /* PW_KEY_LOOP_CANCEL */
 
 #include <errno.h>
 

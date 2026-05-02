@@ -29,6 +29,8 @@ MTEST_BEGIN("pipewire", client)
     {
         test_type_t                *test;
         audio::pipewire::backend_t *back;
+        audio::port_id_t            audio_in[2];
+        audio::port_id_t            audio_out[2];
         bool                        connected;
     };
 
@@ -40,6 +42,18 @@ MTEST_BEGIN("pipewire", client)
             int(params->sample_rate), int(params->buffer_size), int(params->max_buffer_size));
 
         client->connected       = true;
+
+        // Register output ports
+        test_type_t * const test = client->test;
+        audio::pipewire::backend_t * const back = client->back;
+
+        client->audio_out[0]    = back->register_port(back, "out_l", audio::PORT_AUDIO_OUT);
+        MTEST_ASSERT_PTR(test, client->audio_out[0] >= 0);
+        client->audio_out[1]    = back->register_port(back, "out_r", audio::PORT_AUDIO_OUT);
+        MTEST_ASSERT_PTR(test, client->audio_out[1] >= 0);
+
+        audio::port_id_t dup_id = back->register_port(back, "out_l", audio::PORT_AUDIO_OUT);
+        MTEST_ASSERT_PTR(test, dup_id == -STATUS_ALREADY_EXISTS);
 
         return STATUS_OK;
     }
@@ -100,6 +114,10 @@ MTEST_BEGIN("pipewire", client)
         client_t client;
         client.test         = this;
         client.back         = NULL;
+        client.audio_in[0]  = -1;
+        client.audio_in[1]  = -1;
+        client.audio_out[0] = -1;
+        client.audio_out[1] = -1;
         client.connected    = false;
 
         // Create backend
@@ -112,6 +130,18 @@ MTEST_BEGIN("pipewire", client)
         };
         back->construct();
         client.back         = back;
+
+        // Register input ports
+        client.audio_in[0]      = back->register_port(back, "in_l", audio::PORT_AUDIO_IN);
+        MTEST_ASSERT(client.audio_in[0] >= 0);
+        client.audio_in[1]      = back->register_port(back, "in_r", audio::PORT_AUDIO_IN);
+        MTEST_ASSERT(client.audio_in[1] >= 0);
+
+        MTEST_ASSERT(back->port_system_name(back, client.audio_in[0]) == NULL);
+        MTEST_ASSERT(back->port_system_name(back, client.audio_in[1]) == NULL);
+
+        audio::port_id_t dup_id = back->register_port(back, "in_l", audio::PORT_AUDIO_IN);
+        MTEST_ASSERT(dup_id == -STATUS_ALREADY_EXISTS);
 
         // Connect backend to PipeWire
         printf("Connecting to PipeWire...\n");
@@ -134,10 +164,25 @@ MTEST_BEGIN("pipewire", client)
 
         // Ensure that connection call-back has been issued
         MTEST_ASSERT(client.connected == true);
+        const char * port_name;
+
+        port_name = back->port_system_name(back, client.audio_in[0]);
+        MTEST_ASSERT((port_name != NULL) && (strcmp(port_name, "PipeWire Manual Test:in_l") == 0));
+        port_name = back->port_system_name(back, client.audio_in[1]);
+        MTEST_ASSERT((port_name != NULL) && (strcmp(port_name, "PipeWire Manual Test:in_r") == 0));
+        port_name = back->port_system_name(back, client.audio_out[0]);
+        MTEST_ASSERT((port_name != NULL) && (strcmp(port_name, "PipeWire Manual Test:out_l") == 0));
+        port_name = back->port_system_name(back, client.audio_out[1]);
+        MTEST_ASSERT((port_name != NULL) && (strcmp(port_name, "PipeWire Manual Test:out_r") == 0));
 
         // Disconnect backend
         printf("Disconnecting from PipeWire...\n");
         MTEST_ASSERT(back->disconnect(back) == STATUS_OK);
+
+        MTEST_ASSERT(back->port_system_name(back, client.audio_in[0]) == NULL);
+        MTEST_ASSERT(back->port_system_name(back, client.audio_in[1]) == NULL);
+        MTEST_ASSERT(back->port_system_name(back, client.audio_out[0]) == NULL);
+        MTEST_ASSERT(back->port_system_name(back, client.audio_out[1]) == NULL);
 
         // Ensure that disconnection call-back has been issued
         MTEST_ASSERT(client.connected == false);

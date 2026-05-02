@@ -27,9 +27,12 @@
 #include <lsp-plug.in/audio/iface/backend.h>
 #include <lsp-plug.in/audio/pipewire/dictionary.h>
 #include <lsp-plug.in/audio/pipewire/memmap.h>
+#include <lsp-plug.in/audio/pipewire/mutex.h>
+#include <lsp-plug.in/audio/pipewire/port_map.h>
 
 #include <pipewire/pipewire.h>
 #include <pipewire/extensions/client-node.h>
+#include <spa/param/latency.h>
 #include <spa/utils/ringbuffer.h>
 
 #if (PW_VERSION_CORE >= 4) && (PW_VERSION_CORE_EVENTS >= 1)
@@ -42,10 +45,14 @@ namespace lsp
     {
         namespace pipewire
         {
-
+            /**
+             * Trivially-movable backend
+             */
             typedef struct LSP_HIDDEN_MODIFIER backend_t: public audio::backend_t
             {
                 protected:
+                    static constexpr size_t MAX_PORT_ID_BYTES   = 16;
+
                     enum spa_hook_type_t
                     {
                         HOOK_CORE,
@@ -55,6 +62,32 @@ namespace lsp
 
                         HOOK_TOTAL
                     };
+
+                    enum port_params_t
+                    {
+                        PARAM_ENUM_FORMAT,
+                        PARAM_BUFFERS,
+                        PARAM_IO,
+                        PARAM_FORMAT,
+                        PARAM_LATENCY,
+
+                        PARAM_TOTAL
+                    };
+
+                    typedef struct port_t
+                    {
+                        uint32_t            nType;
+                        uint32_t            nBuffers;
+                        char               *sFullId;
+                        char                sID[MAX_PORT_ID_BYTES];
+                        port_id_t           nNodePortId;
+                        spa_port_info       sInfo;
+                        spa_list            vBuffers;
+                        spa_latency_info    vLatency[2];
+                        spa_param_info      vParams[PARAM_TOTAL];
+
+                        dictionary          sDict;
+                    } port_t;
 
                     typedef memmap<spa_io_position>     mm_io_position;
                     typedef memmap<spa_io_clock>        mm_io_clock;
@@ -69,7 +102,7 @@ namespace lsp
                 public:
                     char               *sClientName;
                     char               *sServerName;
-//                    ipc::Mutex         *pDataMutex;
+                    mutex_t            *pMutex;
                     pw_data_loop       *pAudioDataLoop;
                     pw_thread_loop     *pContextThreadLoop;
                     pw_thread_loop     *pNotifyThreadLoop;
@@ -91,17 +124,23 @@ namespace lsp
                     spa_node_info       sNodeInfo;
                     spa_ringbuffer      sNotifyRing;
                     spa_hook            vHooks[HOOK_TOTAL];
+                    port_map            vPortMap[2];
                     mm_io_position      mmPosition;
                     mm_io_clock         mmClock;
 
                     void               *pUserData;
                     const callbacks_t  *pCallbacks;
+                    port_t             *vPorts;
+                    port_id_t           nPortFirst;
+                    port_id_t           nPortCapacity;
                     io_parameters_t     sIOParams;
                     io_position_t       sIOPosition;
                     uint32_t            nLatency;
                     uint32_t            nNodeGlobalId;
                     int                 nSyncRequestId;
                     int                 nSyncResponseId;
+                    int                 nSyncError;
+                    bool                bActivated;
 
                 public:
                     explicit            backend_t();
@@ -167,15 +206,29 @@ namespace lsp
 
                 protected:
                     // PipeWire miscellaneous processing
-                    static int execute_context_properties_match(void *self, const char *location, const char *action, const char *val, size_t len);
+                    static int          execute_context_properties_match(void *self, const char *location, const char *action, const char *val, size_t len);
 
                 protected:
-                    int                 perform_sync();
+                    int                 sync_core(bool lock);
                     status_t            make_connection(
                         const connection_params_t *params,
                         const callbacks_t *callbacks,
                         void *user_data);
                     void                do_disconnect();
+                    port_id_t           sync_alloc_port(const char *id, uint32_t flags);
+                    void                sync_free_port(port_id_t port);
+                    void                sync_free_port(port_t *port);
+                    status_t            register_port(port_t *port);
+                    status_t            unregister_port(port_t *port);
+                    status_t            register_ports();
+                    void                unregister_ports();
+
+                protected:
+                    static void         init_port(port_t *port);
+                    port_t             *find_port(const char *id);
+                    port_t             *alloc_port(const char *id, uint32_t flags);
+                    void                unmap_port(port_t *port);
+                    void                free_port(port_t *port);
 
                 public:
                     static status_t     connect(
@@ -190,7 +243,6 @@ namespace lsp
                     static port_id_t    register_port(audio::backend_t *self, const char *id, uint32_t flags);
                     static status_t     unregister_port(audio::backend_t *self, port_id_t port_id);
                     static const char  *port_system_name(audio::backend_t *self, port_id_t port_id);
-                    static status_t     set_port_latency(audio::backend_t *self, port_id_t port_id, uint32_t latency);
 
                     static status_t     connect_ports(audio::backend_t *self, const char *source, const char *destination);
                     static status_t     disconnect_ports(audio::backend_t *self, const char *source, const char *destination);

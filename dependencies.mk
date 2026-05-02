@@ -30,7 +30,8 @@ TEST_DEPENDENCIES = \
 #------------------------------------------------------------------------------
 # Linux dependencies
 LINUX_DEPENDENCIES = \
-  LIBPIPEWIRE
+  LIBPIPEWIRE \
+  LIBPTHREAD
 
 LINUX_TEST_DEPENDENCIES =
 
@@ -42,7 +43,8 @@ endif
 #------------------------------------------------------------------------------
 # BSD dependencies
 BSD_DEPENDENCIES = \
-  LIBPIPEWIRE
+  LIBPIPEWIRE \
+  LIBPTHREAD
 
 BSD_TEST_DEPENDENCIES =
 

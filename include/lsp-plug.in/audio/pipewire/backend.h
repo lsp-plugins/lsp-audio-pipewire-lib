@@ -29,6 +29,7 @@
 #include <lsp-plug.in/audio/pipewire/memmap.h>
 #include <lsp-plug.in/audio/pipewire/mutex.h>
 #include <lsp-plug.in/audio/pipewire/port_map.h>
+#include <lsp-plug.in/audio/pipewire/registry.h>
 
 #include <pipewire/pipewire.h>
 #include <pipewire/extensions/client-node.h>
@@ -118,6 +119,7 @@ namespace lsp
                     pw_client_node     *pNode;
                     spa_thread_utils   *pOldThreadUtils;
 
+                    registry            sRegistry;
                     dictionary          sClientDict;
                     dictionary          sContextDict;
                     spa_thread_utils    sThreadUtils;
@@ -222,7 +224,6 @@ namespace lsp
                     status_t            unregister_port(port_t *port);
                     status_t            register_ports();
                     void                unregister_ports();
-                    void                sync_update_node_name(const char *name);
 
                 protected:
                     static void         init_port(port_t *port);

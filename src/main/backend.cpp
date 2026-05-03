@@ -145,6 +145,7 @@ namespace lsp
                 pNode                           = NULL;
                 pOldThreadUtils                 = NULL;
 
+                sRegistry.construct();
                 sClientDict.construct();
                 sContextDict.construct();
                 bzero(&sThreadUtils, sizeof(sThreadUtils));
@@ -649,6 +650,7 @@ namespace lsp
                     sClientName = NULL;
                 }
 
+                sRegistry.destroy();
                 sClientDict.destroy();
                 sContextDict.destroy();
                 bzero(&sThreadUtils, sizeof(sThreadUtils));
@@ -1144,25 +1146,6 @@ namespace lsp
                 return NULL;
             }
 
-            void backend_t::sync_update_node_name(const char *name)
-            {
-                MUTEX_SCOPED_LOCK(pMutex);
-
-                if ((sClientName != NULL) && (strcmp(name, sClientName) == 0))
-                    return;
-
-                char *new_name = strdup(name);
-                if (new_name == NULL)
-                {
-                    lsp_warn("Failed to allocate new node name");
-                    return;
-                }
-                lsp_finally { free(new_name); };
-
-                lsp_trace("Node name changed from '%s' to '%s'", sClientName, new_name);
-                lsp::swap(sClientName, new_name);
-            }
-
             // PipeWire Registry callbacks
             void backend_t::on_registry_event_global(
                 void *self, uint32_t id,
@@ -1179,112 +1162,54 @@ namespace lsp
                     lsp_trace("Related properties:\n%s\n", dict.to_string());
             #endif /* LSP_TRACE */
 
-                if (strcmp(type, PW_TYPE_INTERFACE_Client) == 0)
+                MUTEX_SCOPED_LOCK(back->pMutex);
+
+                // Check that we need to synchronize node name
+                bool sync_node_name = false;
+                if (strcmp(type, PW_TYPE_INTERFACE_Node) == 0)
                 {
-                    // TODO
+                    if (id == back->nNodeGlobalId)
+                        sync_node_name  = back->sRegistry.find_node_by_name(back->sClientName) != NULL;
                 }
-                else if (strcmp(type, PW_TYPE_INTERFACE_Node) == 0)
+
+                const status_t res = back->sRegistry.process_add(id, permissions, type, version, props);
+                if (res == STATUS_OK)
                 {
-                    const char *node_name   = spa_dict_lookup(props, PW_KEY_NODE_NAME);
-                    if (node_name != NULL)
+                    const node_t * const node = (sync_node_name) ?
+                        back->sRegistry.find_node_by_id(back->nNodeGlobalId) : NULL;
+                    if (node != NULL)
                     {
-                        lsp_trace("Registred node name=%s, id=%d", node_name, int(id));
-
-                        if ((node_name != NULL) && (id == back->nNodeGlobalId))
-                            back->sync_update_node_name(node_name);
+                        char * new_name = strdup(node->sUID);
+                        if (new_name != NULL)
+                        {
+                            lsp_trace("Node name updated from '%s' to '%s'", back->sClientName, new_name);
+                            free(back->sClientName);
+                            back->sClientName = new_name;
+                        }
                     }
-
-//                    const char *node_name;
-//                    char tmp[JACK_CLIENT_NAME_SIZE+1];
-//
-//                    o = alloc_object(c, INTERFACE_Node);
-//                    if (o == NULL)
-//                        goto exit;
-//
-//                    if ((str = spa_dict_lookup(props, PW_KEY_CLIENT_ID)) != NULL)
-//                        o->node.client_id = atoi(str);
-//
-//                    node_name = spa_dict_lookup(props, PW_KEY_NODE_NAME);
-//
-//                    snprintf(o->node.node_name, sizeof(o->node.node_name),
-//                            "%s", node_name);
-//
-//                    app = spa_dict_lookup(props, PW_KEY_APP_NAME);
-//
-//                    if (c->short_name) {
-//                        str = spa_dict_lookup(props, PW_KEY_NODE_NICK);
-//                        if (str == NULL)
-//                            str = spa_dict_lookup(props, PW_KEY_NODE_DESCRIPTION);
-//                    } else {
-//                        str = spa_dict_lookup(props, PW_KEY_NODE_DESCRIPTION);
-//                        if (str == NULL)
-//                            str = spa_dict_lookup(props, PW_KEY_NODE_NICK);
-//                    }
-//                    if (str == NULL)
-//                        str = node_name;
-//                    if (str == NULL)
-//                        str = spa_dict_lookup(props, PW_KEY_OBJECT_PATH);
-//                    if (str == NULL)
-//                        str = "node";
-//
-//                    if (app && !spa_streq(app, str))
-//                        snprintf(tmp, sizeof(tmp), "%s/%s", app, str);
-//                    else
-//                        snprintf(tmp, sizeof(tmp), "%s", str);
-//
-//                    if (c->filter_name)
-//                        filter_name(tmp, FILTER_NAME, c->filter_char);
-//
-//                    ot = find_node(c, tmp);
-//                    if (ot != NULL && o->node.client_id != ot->node.client_id) {
-//                        snprintf(o->node.name, sizeof(o->node.name), "%.*s-%d",
-//                                (int)(sizeof(tmp)-11), tmp, id);
-//                    } else {
-//                        do_emit = ot == NULL;
-//                        snprintf(o->node.name, sizeof(o->node.name), "%s", tmp);
-//                    }
-//                    if (id == c->node_id) {
-//                        pw_log_debug("%p: add our node %d", c, id);
-//                        snprintf(c->name, sizeof(c->name), "%s", o->node.name);
-//                        c->object = o;
-//                        c->serial = serial;
-//                    }
-//
-//                    if ((str = spa_dict_lookup(props, PW_KEY_PRIORITY_SESSION)) != NULL)
-//                        o->node.priority = pw_properties_parse_int(str);
-//                    if ((str = spa_dict_lookup(props, PW_KEY_CLIENT_API)) != NULL)
-//                        o->node.is_jack = spa_streq(str, "jack");
-//
-//                    pw_log_debug("%p: add node %d", c, id);
-//
-//                    if (o->node.is_jack) {
-//                        o->proxy = pw_registry_bind(c->registry,
-//                            id, type, PW_VERSION_NODE, 0);
-//                        if (o->proxy) {
-//                            pw_proxy_add_listener(o->proxy,
-//                                    &o->proxy_listener, &proxy_events, o);
-//                            pw_proxy_add_object_listener(o->proxy,
-//                                    &o->object_listener, &node_events, o);
-//                            do_sync = true;
-//                        }
-//                    }
-//                    pthread_mutex_lock(&c->context.lock);
-//                    spa_list_append(&c->context.objects, &o->link);
-//                    pthread_mutex_unlock(&c->context.lock);
                 }
-                else if (strcmp(type, PW_TYPE_INTERFACE_Port) == 0)
+                else
                 {
-                    // TODO
-                }
-                else if (strcmp(type, PW_TYPE_INTERFACE_Link) == 0)
-                {
-                    // TODO
+                    lsp_warn("Error while processing registry add event "
+                        "self=%p, id=%d, permissions=0x%x, type:%s/%d, props=%p: code=%d",
+                        self, int(id), int(permissions), type, int(version), props, int(res));
                 }
             }
 
             void backend_t::on_registry_event_removed(void *self, uint32_t id)
             {
                 lsp_trace("self=%p, id=%d\n", self, int(id));
+                backend_t * const back      = cast(self);
+
+                MUTEX_SCOPED_LOCK(back->pMutex);
+
+                status_t res = back->sRegistry.process_remove(id);
+                if (res != STATUS_OK)
+                {
+                    lsp_warn("Error while processing registry remove event "
+                        "self=%p, id=%d",
+                        self, int(id));
+                }
             }
 
             // PipeWire Core callbacks

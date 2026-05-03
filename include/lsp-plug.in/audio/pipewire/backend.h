@@ -222,6 +222,7 @@ namespace lsp
                     status_t            unregister_port(port_t *port);
                     status_t            register_ports();
                     void                unregister_ports();
+                    void                sync_update_node_name(const char *name);
 
                 protected:
                     static void         init_port(port_t *port);

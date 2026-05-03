@@ -803,8 +803,7 @@ namespace lsp
                 if (port < 0)
                     return;
 
-                mutex_lock(pMutex);
-                lsp_finally { mutex_unlock(pMutex); };
+                MUTEX_SCOPED_LOCK(pMutex);
 
                 if (port >= nPortCapacity)
                     return;
@@ -814,16 +813,15 @@ namespace lsp
 
             void backend_t::sync_free_port(port_t *port)
             {
-                mutex_lock(pMutex);
-                lsp_finally { mutex_unlock(pMutex); };
+                MUTEX_SCOPED_LOCK(pMutex);
+
                 unmap_port(port);
                 free_port(port);
             }
 
             port_id_t backend_t::sync_alloc_port(const char *id, uint32_t flags)
             {
-                mutex_lock(pMutex);
-                lsp_finally { mutex_unlock(pMutex); };
+                MUTEX_SCOPED_LOCK(pMutex);
 
                 // Allocate port, check for duplicates
                 if (find_port(id) != NULL)
@@ -1146,20 +1144,142 @@ namespace lsp
                 return NULL;
             }
 
+            void backend_t::sync_update_node_name(const char *name)
+            {
+                MUTEX_SCOPED_LOCK(pMutex);
+
+                if ((sClientName != NULL) && (strcmp(name, sClientName) == 0))
+                    return;
+
+                char *new_name = strdup(name);
+                if (new_name == NULL)
+                {
+                    lsp_warn("Failed to allocate new node name");
+                    return;
+                }
+                lsp_finally { free(new_name); };
+
+                lsp_trace("Node name changed from '%s' to '%s'", sClientName, new_name);
+                lsp::swap(sClientName, new_name);
+            }
+
             // PipeWire Registry callbacks
             void backend_t::on_registry_event_global(
                 void *self, uint32_t id,
                 uint32_t permissions, const char *type, uint32_t version,
                 const spa_dict *props)
             {
+                backend_t * const back      = cast(self);
                 lsp_trace("self=%p, id=%d, permissions=0x%x, type:%s/%d, props=%p\n",
                     self, int(id), int(permissions), type, int(version), props);
 
             #ifdef LSP_TRACE
                 dictionary dict;
-                if ((props) && (dict.set(props) == STATUS_OK))
+                if ((props != NULL) && (dict.set(props) == STATUS_OK))
                     lsp_trace("Related properties:\n%s\n", dict.to_string());
             #endif /* LSP_TRACE */
+
+                if (strcmp(type, PW_TYPE_INTERFACE_Client) == 0)
+                {
+                    // TODO
+                }
+                else if (strcmp(type, PW_TYPE_INTERFACE_Node) == 0)
+                {
+                    const char *node_name   = spa_dict_lookup(props, PW_KEY_NODE_NAME);
+                    if (node_name != NULL)
+                    {
+                        lsp_trace("Registred node name=%s, id=%d", node_name, int(id));
+
+                        if ((node_name != NULL) && (id == back->nNodeGlobalId))
+                            back->sync_update_node_name(node_name);
+                    }
+
+//                    const char *node_name;
+//                    char tmp[JACK_CLIENT_NAME_SIZE+1];
+//
+//                    o = alloc_object(c, INTERFACE_Node);
+//                    if (o == NULL)
+//                        goto exit;
+//
+//                    if ((str = spa_dict_lookup(props, PW_KEY_CLIENT_ID)) != NULL)
+//                        o->node.client_id = atoi(str);
+//
+//                    node_name = spa_dict_lookup(props, PW_KEY_NODE_NAME);
+//
+//                    snprintf(o->node.node_name, sizeof(o->node.node_name),
+//                            "%s", node_name);
+//
+//                    app = spa_dict_lookup(props, PW_KEY_APP_NAME);
+//
+//                    if (c->short_name) {
+//                        str = spa_dict_lookup(props, PW_KEY_NODE_NICK);
+//                        if (str == NULL)
+//                            str = spa_dict_lookup(props, PW_KEY_NODE_DESCRIPTION);
+//                    } else {
+//                        str = spa_dict_lookup(props, PW_KEY_NODE_DESCRIPTION);
+//                        if (str == NULL)
+//                            str = spa_dict_lookup(props, PW_KEY_NODE_NICK);
+//                    }
+//                    if (str == NULL)
+//                        str = node_name;
+//                    if (str == NULL)
+//                        str = spa_dict_lookup(props, PW_KEY_OBJECT_PATH);
+//                    if (str == NULL)
+//                        str = "node";
+//
+//                    if (app && !spa_streq(app, str))
+//                        snprintf(tmp, sizeof(tmp), "%s/%s", app, str);
+//                    else
+//                        snprintf(tmp, sizeof(tmp), "%s", str);
+//
+//                    if (c->filter_name)
+//                        filter_name(tmp, FILTER_NAME, c->filter_char);
+//
+//                    ot = find_node(c, tmp);
+//                    if (ot != NULL && o->node.client_id != ot->node.client_id) {
+//                        snprintf(o->node.name, sizeof(o->node.name), "%.*s-%d",
+//                                (int)(sizeof(tmp)-11), tmp, id);
+//                    } else {
+//                        do_emit = ot == NULL;
+//                        snprintf(o->node.name, sizeof(o->node.name), "%s", tmp);
+//                    }
+//                    if (id == c->node_id) {
+//                        pw_log_debug("%p: add our node %d", c, id);
+//                        snprintf(c->name, sizeof(c->name), "%s", o->node.name);
+//                        c->object = o;
+//                        c->serial = serial;
+//                    }
+//
+//                    if ((str = spa_dict_lookup(props, PW_KEY_PRIORITY_SESSION)) != NULL)
+//                        o->node.priority = pw_properties_parse_int(str);
+//                    if ((str = spa_dict_lookup(props, PW_KEY_CLIENT_API)) != NULL)
+//                        o->node.is_jack = spa_streq(str, "jack");
+//
+//                    pw_log_debug("%p: add node %d", c, id);
+//
+//                    if (o->node.is_jack) {
+//                        o->proxy = pw_registry_bind(c->registry,
+//                            id, type, PW_VERSION_NODE, 0);
+//                        if (o->proxy) {
+//                            pw_proxy_add_listener(o->proxy,
+//                                    &o->proxy_listener, &proxy_events, o);
+//                            pw_proxy_add_object_listener(o->proxy,
+//                                    &o->object_listener, &node_events, o);
+//                            do_sync = true;
+//                        }
+//                    }
+//                    pthread_mutex_lock(&c->context.lock);
+//                    spa_list_append(&c->context.objects, &o->link);
+//                    pthread_mutex_unlock(&c->context.lock);
+                }
+                else if (strcmp(type, PW_TYPE_INTERFACE_Port) == 0)
+                {
+                    // TODO
+                }
+                else if (strcmp(type, PW_TYPE_INTERFACE_Link) == 0)
+                {
+                    // TODO
+                }
             }
 
             void backend_t::on_registry_event_removed(void *self, uint32_t id)
@@ -1403,7 +1523,7 @@ namespace lsp
             {
                 backend_t * const back  = cast(self);
                 back->nNodeGlobalId     = global_id;
-                lsp_trace("PipeWire node bound with global_id=%d", int(global_id));
+                lsp_trace("Node '%s' bound with global_id=%d", back->sClientName, int(global_id));
             }
 
             void backend_t::on_node_removed(void *self)

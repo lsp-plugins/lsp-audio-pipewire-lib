@@ -116,7 +116,7 @@ namespace lsp
                     else if (cmp > 0)
                         first               = middle + 1;
                     else
-                        return middle;
+                        return uint32_t(middle);
                 }
 
                 return uint32_t(first);

@@ -34,16 +34,16 @@ namespace lsp
     {
         namespace pipewire
         {
-            static const char *prop_true                        = "true";
-            static const char *prop_false                       = "false";
+            constexpr const char *prop_true                     = "true";
+            constexpr const char *prop_false                    = "false";
 
-            static const char *BACKEND_MEDIA_TYPE               = "Audio";
-            static const char *BACKEND_MEDIA_CATEGORY           = "Duplex";
-            static const char *BACKEND_MEDIA_ROLE               = "DSP";
+            constexpr const char *BACKEND_MEDIA_TYPE            = "Audio";
+            constexpr const char *BACKEND_MEDIA_CATEGORY        = "Duplex";
+            constexpr const char *BACKEND_MEDIA_ROLE            = "DSP";
 
-            static const char *PORT_FORMAT_DSP_AUDIO            = "32 bit float mono audio";
-            static const char *PORT_FORMAT_DSP_MIDI             = "8 bit raw midi";
-            static const char *PORT_FORMAT_DSP_OTHER            = "other";
+            constexpr const char *PORT_FORMAT_DSP_AUDIO         = "32 bit float mono audio";
+            constexpr const char *PORT_FORMAT_DSP_MIDI          = "8 bit raw midi";
+            constexpr const char *PORT_FORMAT_DSP_OTHER         = "other";
 
             static const uint32_t MAX_BUFFERS                   = 2;
 

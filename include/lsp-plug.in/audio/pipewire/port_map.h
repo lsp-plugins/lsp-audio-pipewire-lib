@@ -34,6 +34,9 @@ namespace lsp
     {
         namespace pipewire
         {
+            /**
+             * Port mapping: map port identifier to some non-negative value which tends to zero.
+             */
             struct port_map
             {
                 private:
@@ -59,7 +62,7 @@ namespace lsp
                      * @param port identifier to map
                      * @return mapped port identifier or negative error code
                      */
-                    port_id_t       map(port_id_t port ) noexcept;
+                    port_id_t       map(port_id_t port) noexcept;
 
                     /**
                      * Unmap port

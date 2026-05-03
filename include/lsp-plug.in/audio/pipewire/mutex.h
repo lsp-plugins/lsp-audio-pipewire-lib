@@ -63,6 +63,28 @@ namespace lsp
              */
             inline void         mutex_unlock(mutex_t *mutex);
 
+            /**
+             * Mutex guard
+             */
+            struct mutex_guard
+            {
+                private:
+                    mutex_t        *pMutex;
+
+                public:
+                    explicit inline mutex_guard(mutex_t *mutex);
+                    inline mutex_guard(const mutex_guard & src);
+                    inline mutex_guard(mutex_guard && src);
+                    inline ~mutex_guard();
+
+                    inline mutex_guard & operator = (const mutex_guard & src);
+                    inline mutex_guard & operator = (mutex_guard && src);
+            };
+
+            #define MUTEX_SCOPED_LOCK__2(mutex, counter) mutex_guard guard ## counter (mutex)
+            #define MUTEX_SCOPED_LOCK__1(mutex, counter) MUTEX_SCOPED_LOCK__2(mutex, counter)
+            #define MUTEX_SCOPED_LOCK(mutex) MUTEX_SCOPED_LOCK__1(mutex, __COUNTER__)
+
         } /* namespace pipewire */
     }  /* namespace audio */
 }  /* namespace lsp */

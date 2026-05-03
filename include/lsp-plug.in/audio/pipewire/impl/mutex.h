@@ -91,6 +91,43 @@ namespace lsp
                     pthread_mutex_unlock(&mutex->lock);
             }
 
+            inline mutex_guard::mutex_guard(mutex_t *mutex)
+            {
+                pMutex = mutex;
+                mutex_lock(pMutex);
+            }
+
+            inline mutex_guard::mutex_guard(const mutex_guard & src)
+            {
+                pMutex = src.pMutex;
+                mutex_lock(pMutex);
+            }
+
+            inline mutex_guard::mutex_guard(mutex_guard && src)
+            {
+                pMutex = lsp::exchange(src.pMutex, static_cast<mutex_t *>(NULL));
+            }
+
+            inline mutex_guard::~mutex_guard()
+            {
+                mutex_unlock(pMutex);
+                pMutex = NULL;
+            }
+
+            mutex_guard & mutex_guard::operator = (const mutex_guard & src)
+            {
+                mutex_lock(src.pMutex);
+                mutex_unlock(pMutex);
+                pMutex = src.pMutex;
+                return *this;
+            }
+
+            inline mutex_guard & mutex_guard::operator = (mutex_guard && src)
+            {
+                pMutex = lsp::exchange(src.pMutex, static_cast<mutex_t *>(NULL));
+                return *this;
+            }
+
         } /* namespace pipewire */
     }  /* namespace audio */
 }  /* namespace lsp */

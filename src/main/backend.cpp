@@ -60,14 +60,14 @@ namespace lsp
                 .version = PW_VERSION_CORE_EVENTS,
                 .info = on_core_info,
                 .done = on_core_done,
-                .ping = on_core_ping,
+                .ping = NULL, // on_core_ping,
                 .error = on_core_error,
-                .remove_id = on_core_remove_id,
-                .bound_id = on_core_bound_id,
-                .add_mem = on_core_add_mem,
-                .remove_mem = on_core_remove_mem,
+                .remove_id = NULL, // on_core_remove_id,
+                .bound_id = NULL, // on_core_bound_id,
+                .add_mem = NULL, // on_core_add_mem,
+                .remove_mem = NULL, // on_core_remove_mem,
             #ifdef PIPEWIRE_HAS_BOUND_PROPS
-                .bound_props = on_core_bound_props,
+                .bound_props = NULL, // on_core_bound_props,
             #endif /* PIPEWIRE_HAS_BOUND_PROPS */
             };
 
@@ -1358,6 +1358,9 @@ namespace lsp
             void backend_t::on_core_ping(void *self, uint32_t id, int seq)
             {
                 lsp_trace("self=%p, id=%d, seq=%d", self, int(id), int(seq));
+                backend_t * const back = cast(self);
+                if (back->pCore != NULL)
+                    pw_core_pong(back->pCore, id, seq);
             }
 
             void backend_t::on_core_error(void *self, uint32_t id, int seq, int res, const char *message)
@@ -1498,7 +1501,19 @@ namespace lsp
 
             int backend_t::on_node_command(void *self, const struct spa_command *command)
             {
-                lsp_trace("self = %p", self);
+                lsp_trace("self = %p, command=%d (%s)",
+                    self,
+                    int(command->body.body.type),
+                    decode_spa_command_type(command->body.body.type));
+
+                if (SPA_COMMAND_TYPE(command) == SPA_TYPE_COMMAND_Node)
+                {
+                    lsp_trace("Node command: id=%d (%s)",
+                        int(command->body.body.id),
+                        decode_spa_node_command(command->body.body.id));
+
+                }
+
                 return 0;
             }
 

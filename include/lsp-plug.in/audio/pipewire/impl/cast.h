@@ -77,6 +77,45 @@ namespace lsp
                 return PORT_FORMAT_DSP_OTHER;
             }
 
+            inline const char * decode_spa_command_type(uint32_t type)
+            {
+                switch (type)
+                {
+                    case SPA_TYPE_COMMAND_Device:
+                        return "SPA_TYPE_COMMAND_Device";
+                    case SPA_TYPE_COMMAND_Node:
+                        return "SPA_TYPE_COMMAND_Node";
+                    default:
+                        break;
+                }
+                return "unknown";
+            }
+
+            inline const char * decode_spa_node_command(uint32_t id)
+            {
+                #define V(key) \
+                    case key: return # key;
+
+                switch (id)
+                {
+                    V(SPA_NODE_COMMAND_Suspend)
+                    V(SPA_NODE_COMMAND_Pause)
+                    V(SPA_NODE_COMMAND_Start)
+                    V(SPA_NODE_COMMAND_Enable)
+                    V(SPA_NODE_COMMAND_Disable)
+                    V(SPA_NODE_COMMAND_Flush)
+                    V(SPA_NODE_COMMAND_Drain)
+                    V(SPA_NODE_COMMAND_Marker)
+                    V(SPA_NODE_COMMAND_ParamBegin)
+                    V(SPA_NODE_COMMAND_ParamEnd)
+                    V(SPA_NODE_COMMAND_RequestProcess)
+                    default: break;
+                }
+                #undef V
+
+                return "unknown";
+            }
+
         } /* namespace pipewire */
     }  /* namespace audio */
 }  /* namespace lsp */

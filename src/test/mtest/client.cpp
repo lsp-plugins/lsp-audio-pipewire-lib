@@ -206,6 +206,8 @@ MTEST_BEGIN("pipewire", client)
         port_name = back->port_system_name(back, client.audio_out[1]);
         MTEST_ASSERT((port_name != NULL) && (strcmp(port_name, "PipeWire Manual Test:out_r") == 0));
 
+        sleep(10);
+
         // Disconnect backend
         printf("Disconnecting from PipeWire...\n");
         MTEST_ASSERT(back->disconnect(back) == STATUS_OK);

@@ -216,7 +216,9 @@ namespace lsp
                         const connection_params_t *params,
                         const callbacks_t *callbacks,
                         void *user_data);
-                    void                do_disconnect();
+                    status_t            activate();
+                    status_t            deactivate();
+                    void                close_connection();
                     port_id_t           sync_alloc_port(const char *id, uint32_t flags);
                     void                sync_free_port(port_id_t port);
                     void                sync_free_port(port_t *port);

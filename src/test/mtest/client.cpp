@@ -32,19 +32,24 @@ MTEST_BEGIN("pipewire", client)
         audio::port_id_t            audio_in[2];
         audio::port_id_t            audio_out[2];
         bool                        connected;
+        bool                        activated;
     };
 
     static status_t on_connected(void *user_data, const audio::io_parameters_t *params)
     {
         client_t * const client = static_cast<client_t *>(user_data);
-        client->test->printf(
+        test_type_t * const test = client->test;
+
+        test->printf(
             "on_connected sample_rate=%d, buffer_size=%d, max_buffer_size=%d\n",
             int(params->sample_rate), int(params->buffer_size), int(params->max_buffer_size));
+
+        MTEST_ASSERT_PTR(test, !client->connected);
+        MTEST_ASSERT_PTR(test, !client->activated);
 
         client->connected       = true;
 
         // Register output ports
-        test_type_t * const test = client->test;
         audio::pipewire::backend_t * const back = client->back;
 
         client->audio_out[0]    = back->register_port(back, "out_l", audio::PORT_AUDIO_OUT);
@@ -61,7 +66,14 @@ MTEST_BEGIN("pipewire", client)
     static status_t on_activated(void *user_data)
     {
         client_t * const client = static_cast<client_t *>(user_data);
-        client->test->printf("on_activated\n");
+        test_type_t * const test = client->test;
+
+        test->printf("on_activated\n");
+
+        MTEST_ASSERT_PTR(test, !client->activated);
+        MTEST_ASSERT_PTR(test, client->connected);
+
+        client->activated       = true;
 
         return STATUS_OK;
     }
@@ -77,7 +89,14 @@ MTEST_BEGIN("pipewire", client)
     static status_t on_process(void *user_data, const audio::io_position_t *position, uint32_t frames)
     {
         client_t * const client = static_cast<client_t *>(user_data);
+        test_type_t * const test = client->test;
+
         client->test->printf("on_process\n");
+
+        MTEST_ASSERT_PTR(test, client->activated);
+        MTEST_ASSERT_PTR(test, client->connected);
+
+
 
         return STATUS_OK;
     }
@@ -85,7 +104,14 @@ MTEST_BEGIN("pipewire", client)
     static status_t on_deactivated(void *user_data)
     {
         client_t * const client = static_cast<client_t *>(user_data);
-        client->test->printf("on_deactivated\n");
+        test_type_t * const test = client->test;
+
+        test->printf("on_deactivated\n");
+
+        MTEST_ASSERT_PTR(test, client->activated);
+        MTEST_ASSERT_PTR(test, client->connected);
+
+        client->activated       = false;
 
         return STATUS_OK;
     }
@@ -101,7 +127,11 @@ MTEST_BEGIN("pipewire", client)
     static void on_disconnected(void *user_data)
     {
         client_t * const client = static_cast<client_t *>(user_data);
+        test_type_t * const test = client->test;
         client->test->printf("on_disconnected\n");
+
+        MTEST_ASSERT_PTR(test, client->connected);
+        MTEST_ASSERT_PTR(test, !client->activated);
 
         client->connected       = false;
     }
@@ -119,6 +149,7 @@ MTEST_BEGIN("pipewire", client)
         client.audio_out[0] = -1;
         client.audio_out[1] = -1;
         client.connected    = false;
+        client.activated    = false;
 
         // Create backend
         printf("Creating backend...\n");

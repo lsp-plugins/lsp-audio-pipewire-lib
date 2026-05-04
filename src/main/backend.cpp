@@ -559,7 +559,7 @@ namespace lsp
                 return STATUS_OK;
             }
 
-            void backend_t::do_disconnect()
+            void backend_t::close_connection()
             {
                 if (pContextThreadLoop != NULL)
                 {
@@ -675,10 +675,9 @@ namespace lsp
                     return STATUS_BAD_STATE;
 
                 // Set-up destruction hook
-                bool success = false;
                 lsp_finally {
-                    if (!success)
-                        back->do_disconnect();
+                    if (!back->bActivated)
+                        back->close_connection();
                 };
 
                 // Make connection
@@ -699,14 +698,31 @@ namespace lsp
                     callbacks->on_connected(user_data, &back->sIOParams) :
                     STATUS_OK;
                 lsp_finally {
-                    if ((!success) && (callbacks) && (callbacks->on_connection_lost))
+                    if ((!back->bActivated) && (callbacks) && (callbacks->on_connection_lost))
                         callbacks->on_connection_lost(user_data);
                 };
                 if (res != STATUS_OK)
                     return res;
 
-                // Return success result
-                success             = true;
+                // Issue activation callback
+                res = ((callbacks) && (callbacks->on_activated)) ?
+                    callbacks->on_activated(user_data) :
+                    STATUS_OK;
+                if (res != STATUS_OK)
+                    return res;
+
+                // Activate the client
+                res                 = back->activate();
+                if (res != STATUS_OK)
+                {
+                    lsp_error("Could not activate PipeWire client");
+
+                    // Issue deactivation callback
+                    if ((callbacks) && (callbacks->on_deactivated))
+                        callbacks->on_deactivated(user_data);
+
+                    return res;
+                }
 
                 return STATUS_OK;
             }
@@ -721,19 +737,115 @@ namespace lsp
                 if (back->pNode == NULL)
                     return STATUS_BAD_STATE;
 
-                // Unregister ports
-                back->unregister_ports();
-
                 // Get callbacks table and user data
                 const callbacks_t * const cb    = back->pCallbacks;
                 void * const user_data          = back->pUserData;
+                status_t res                    = STATUS_OK;
+
+                // Deactivate plugin
+                if (back->bActivated)
+                {
+                    // Deactivate client
+                    res                     = update_status(res, back->deactivate());
+
+                    // Issue deactivation callback
+                    if ((cb) && (cb->on_deactivated))
+                        cb->on_deactivated(user_data);
+                }
+
+                // Unregister ports
+                back->unregister_ports();
 
                 // Close client connection
-                back->do_disconnect();
+                back->close_connection();
+
                 if ((cb) && (cb->on_disconnected))
                     cb->on_disconnected(user_data);
 
+                return res;
+            }
+
+            status_t backend_t::activate()
+            {
+                // Lock the loop
+                pw_thread_loop_lock(pContextThreadLoop);
+                lsp_finally { pw_thread_loop_unlock(pContextThreadLoop); };
+
+                // Start audio data loop
+                int error = pw_data_loop_start(pAudioDataLoop);
+                if (error < 0)
+                {
+                    lsp_error("Failed to launch PipeWire data loop: error=%d", int(error));
+                    return STATUS_DISCONNECTED;
+                }
+                lsp_finally {
+                    if (!bActivated)
+                        pw_data_loop_stop(pAudioDataLoop);
+                };
+
+                // Set node active
+                error = pw_client_node_set_active(pNode, true);
+                if (error < 0)
+                {
+                    lsp_error("Failed to activate PipeWire node: error=%d", int(error));
+                    return STATUS_DISCONNECTED;
+                }
+                lsp_finally {
+                    if (!bActivated)
+                        pw_data_loop_stop(pAudioDataLoop);
+                };
+
+                // Synchronize core
+                error = sync_core(false);
+                if (error < 0)
+                {
+                    lsp_error("Failed to synchronize with PipeWire core: error=%d", int(error));
+                    return STATUS_DISCONNECTED;
+                }
+
+                // Mark backend activated
+                bActivated      = true;
+
                 return STATUS_OK;
+            }
+
+            status_t backend_t::deactivate()
+            {
+                if (!bActivated)
+                    return STATUS_OK;
+
+                // Lock the loop
+                pw_thread_loop_lock(pContextThreadLoop);
+                lsp_finally { pw_thread_loop_unlock(pContextThreadLoop); };
+
+                // Stop audio data loop
+                status_t res = STATUS_OK;
+                int error = pw_data_loop_stop(pAudioDataLoop);
+                if (error < 0)
+                {
+                    lsp_error("Failed to stop PipeWire data loop: error=%d", int(error));
+                    res         = STATUS_UNKNOWN_ERR;
+                }
+
+                // Mark node as inactive
+                error = pw_client_node_set_active(pNode, false);
+                if (error < 0)
+                {
+                    lsp_error("Failed to deactivate PipeWire node: error=%d", int(error));
+                    res         = STATUS_UNKNOWN_ERR;
+                }
+
+                // Synchronize core
+                error = sync_core(false);
+                if (error < 0)
+                {
+                    lsp_error("Failed to synchronize with PipeWire core: error=%d", int(error));
+                    res         = STATUS_UNKNOWN_ERR;
+                }
+
+                bActivated        = false;
+
+                return res;
             }
 
             int backend_t::sync_core(bool lock)

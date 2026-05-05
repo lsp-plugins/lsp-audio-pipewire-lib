@@ -42,7 +42,7 @@ namespace lsp
             constexpr const char *BACKEND_MEDIA_ROLE            = "DSP";
 
             constexpr const char *PORT_FORMAT_DSP_AUDIO         = "32 bit float mono audio";
-            constexpr const char *PORT_FORMAT_DSP_MIDI          = "8 bit raw midi";
+            constexpr const char *PORT_FORMAT_DSP_MIDI          = "8 bit raw UMP";
             constexpr const char *PORT_FORMAT_DSP_OTHER         = "other";
 
             static const uint32_t MAX_BUFFERS                   = 2;

@@ -58,8 +58,7 @@ namespace lsp
                     {
                         HOOK_CORE,
                         HOOK_REGISTRY,
-                        HOOK_NODE,
-                        HOOK_NODE_PROXY,
+                        HOOK_FILTER,
 
                         HOOK_TOTAL
                     };
@@ -78,16 +77,9 @@ namespace lsp
                     typedef struct port_t
                     {
                         uint32_t            nType;
-                        uint32_t            nBuffers;
+                        void               *pHandle;
                         char               *sFullId;
                         char                sID[MAX_PORT_ID_BYTES];
-                        port_id_t           nNodePortId;
-                        spa_port_info       sInfo;
-                        spa_list            vBuffers;
-                        spa_latency_info    vLatency[2];
-                        spa_param_info      vParams[PARAM_TOTAL];
-
-                        dictionary          sDict;
                     } port_t;
 
                     typedef memmap<spa_io_position>     mm_io_position;
@@ -96,6 +88,7 @@ namespace lsp
                 protected:
                     static const pw_registry_events         registry_events;
                     static const pw_core_events             core_events;
+                    static const pw_filter_events           filter_events;
                     static const pw_client_node_events      node_events;
                     static const pw_proxy_events            node_proxy_events;
                     static const spa_thread_utils_methods   thread_utils_impl;
@@ -106,17 +99,13 @@ namespace lsp
                     mutex_t            *pMutex;
                     pw_data_loop       *pAudioDataLoop;
                     pw_thread_loop     *pContextThreadLoop;
-                    pw_thread_loop     *pNotifyThreadLoop;
                     pw_loop            *pAudioLoop;
                     pw_loop            *pContextLoop;
-                    pw_loop            *pNotifyLoop;
                     pw_context         *pContext;
-                    spa_source         *pNotifySource;
-                    void               *pNotifyBuffer;
                     pw_core            *pCore;
                     pw_mempool         *pMemPool;
                     pw_registry        *pRegistry;
-                    pw_client_node     *pNode;
+                    pw_filter          *pFilter;
                     spa_thread_utils   *pOldThreadUtils;
 
                     registry            sRegistry;
@@ -124,7 +113,6 @@ namespace lsp
                     dictionary          sContextDict;
                     spa_thread_utils    sThreadUtils;
                     spa_node_info       sNodeInfo;
-                    spa_ringbuffer      sNotifyRing;
                     spa_hook            vHooks[HOOK_TOTAL];
                     port_map            vPortMap[2];
                     mm_io_position      mmPosition;
@@ -138,7 +126,6 @@ namespace lsp
                     io_parameters_t     sIOParams;
                     io_position_t       sIOPosition;
                     uint32_t            nLatency;
-                    uint32_t            nNodeGlobalId;
                     int                 nSyncRequestId;
                     int                 nSyncResponseId;
                     int                 nSyncError;
@@ -169,6 +156,17 @@ namespace lsp
                 #ifdef PIPEWIRE_HAS_BOUND_PROPS
                     static void          on_core_bound_props(void *self, uint32_t id, uint32_t global_id, const struct spa_dict *props);
                 #endif /* PIPEWIRE_HAS_BOUND_PROPS */
+
+                protected:
+                    static void         on_filter_destroy(void *self);
+                    static void         on_filter_state_changed(void *self, enum pw_filter_state old, enum pw_filter_state state, const char *error);
+                    static void         on_filter_io_changed(void *self, void *port_data, uint32_t id, void *area, uint32_t size);
+                    static void         on_filter_param_changed(void *self, void *port_data, uint32_t id, const struct spa_pod *param);
+                    static void         on_filter_add_buffer(void *self, void *port_data, struct pw_buffer *buffer);
+                    static void         on_filter_remove_buffer(void *self, void *port_data, struct pw_buffer *buffer);
+                    static void         on_filter_process(void *self, struct spa_io_position *position);
+                    static void         on_filter_drained(void *self);
+                    static void         on_filter_command(void *self, const struct spa_command *command);
 
                 protected:
                     // PipeWire node events
@@ -219,9 +217,6 @@ namespace lsp
                     status_t            activate();
                     status_t            deactivate();
                     void                close_connection();
-                    port_id_t           sync_alloc_port(const char *id, uint32_t flags);
-                    void                sync_free_port(port_id_t port);
-                    void                sync_free_port(port_t *port);
                     status_t            register_port(port_t *port);
                     status_t            unregister_port(port_t *port);
                     status_t            register_ports();
@@ -230,9 +225,8 @@ namespace lsp
                 protected:
                     static void         init_port(port_t *port);
                     port_t             *find_port(const char *id);
-                    port_t             *alloc_port(const char *id, uint32_t flags);
-                    void                unmap_port(port_t *port);
                     void                free_port(port_t *port);
+                    port_t             *alloc_port(const char *id, uint32_t flags);
 
                 public:
                     static status_t     connect(

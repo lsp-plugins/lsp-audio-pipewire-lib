@@ -109,6 +109,22 @@ namespace lsp
                 .bound_props        = on_node_bound_props,
             };
 
+            // PipeWire filter events
+            const pw_filter_events backend_t::filter_events =
+            {
+            #define PW_VERSION_FILTER_EVENTS    1
+                .version            = PW_VERSION_FILTER_EVENTS,
+                .destroy            = on_filter_destroy,
+                .state_changed      = on_filter_state_changed,
+                .io_changed         = on_filter_io_changed,
+                .param_changed      = on_filter_param_changed,
+                .add_buffer         = on_filter_add_buffer,
+                .remove_buffer      = on_filter_remove_buffer,
+                .process            = on_filter_process,
+                .drained            = on_filter_drained,
+                .command            = on_filter_command,
+            };
+
             // PipeWire thread utils implementation
             const spa_thread_utils_methods backend_t::thread_utils_impl =
             {
@@ -133,16 +149,13 @@ namespace lsp
                 pMutex                          = NULL;
                 pAudioDataLoop                  = NULL;
                 pContextThreadLoop              = NULL;
-                pNotifyThreadLoop               = NULL;
                 pAudioLoop                      = NULL;
                 pContextLoop                    = NULL;
-                pNotifyLoop                     = NULL;
                 pContext                        = NULL;
-                pNotifySource                   = NULL;
                 pCore                           = NULL;
                 pMemPool                        = NULL;
                 pRegistry                       = NULL;
-                pNode                           = NULL;
+                pFilter                         = NULL;
                 pOldThreadUtils                 = NULL;
 
                 sRegistry.construct();
@@ -150,7 +163,6 @@ namespace lsp
                 sContextDict.construct();
                 bzero(&sThreadUtils, sizeof(sThreadUtils));
                 bzero(&sNodeInfo, sizeof(sNodeInfo));
-                bzero(&sNotifyRing, sizeof(sNotifyRing));
                 bzero(vHooks, sizeof(spa_hook) * HOOK_TOTAL);
                 vPortMap[SPA_DIRECTION_INPUT].construct();
                 vPortMap[SPA_DIRECTION_OUTPUT].construct();
@@ -180,7 +192,6 @@ namespace lsp
                 npos->beats_per_minute_change   = 0.0f;
                 npos->ticks_per_beat            = 4096.0f;
 
-                nNodeGlobalId                   = SPA_ID_INVALID;
                 nLatency                        = 0;
                 nSyncRequestId                  = -EINVAL;
                 nSyncResponseId                 = -EINVAL;
@@ -226,7 +237,6 @@ namespace lsp
                 // Reset parameters
                 pUserData           = user_data;
                 pCallbacks          = callbacks;
-                nNodeGlobalId       = SPA_ID_INVALID;
                 nLatency            = 0;
                 nSyncRequestId      = -EINVAL;
                 nSyncResponseId     = -EINVAL;
@@ -255,14 +265,6 @@ namespace lsp
                         lsp_warn("Failed to allocate server name string");
                         return STATUS_NO_MEM;
                     }
-                }
-
-                // Allocate notification buffer
-                pNotifyBuffer       = calloc(1, NOTIFY_BUFFER_SIZE);
-                if (pNotifyBuffer == NULL)
-                {
-                    lsp_warn("Failed to allocate notification buffer");
-                    return STATUS_NO_MEM;
                 }
 
                 // Create mutex
@@ -314,22 +316,6 @@ namespace lsp
                         return STATUS_NO_MEM;
                     }
                 }
-
-                // Create notify thread loop
-                pNotifyThreadLoop   = pw_thread_loop_new(sClientName, NULL);
-                if (pNotifyThreadLoop == NULL)
-                {
-                    lsp_warn("Failed to create PipeWire notification thread loop");
-                    return STATUS_DISCONNECTED;
-                }
-                pNotifyLoop         = pw_thread_loop_get_loop(pNotifyThreadLoop);
-                pNotifySource       = pw_loop_add_event(pNotifyLoop, on_notify_event, this);
-                if (pNotifySource == NULL)
-                {
-                    lsp_warn("Failed to add PipeWire notification source");
-                    return STATUS_DISCONNECTED;
-                }
-                spa_ringbuffer_init(&sNotifyRing);
 
                 // Update client properties
                 {
@@ -495,49 +481,19 @@ namespace lsp
                         lsp_trace("Node dictionary:\n%s", sClientDict.to_string());
                     }
 
-                    // Create client node
-                    pNode = static_cast<pw_client_node *>(
-                        pw_core_create_object(
-                            pCore,
-                            "client-node",
-                            PW_TYPE_INTERFACE_ClientNode,
-                            PW_VERSION_CLIENT_NODE,
-                            sClientDict.dict(),
-                            0));
-                    if (pNode == NULL)
+                    // Create PipeWire filter
                     {
-                        lsp_warn("Could not create PipeWire node");
-                        return STATUS_DISCONNECTED;
-                    }
-                    error = pw_client_node_add_listener(pNode, &vHooks[HOOK_NODE], &node_events, this);
-                    if (error < 0)
-                    {
-                        lsp_warn("Failed to add node listener: code=%d", -error);
-                        return STATUS_DISCONNECTED;
-                    }
-                    pw_proxy_add_listener(
-                        reinterpret_cast<pw_proxy *>(pNode),
-                        &vHooks[HOOK_NODE_PROXY], &node_proxy_events, this);
+                        pw_properties * const filter_props = sClientDict.make_properties();
+                        pFilter = pw_filter_new(pCore, sClientName, filter_props);
 
-                    // Update node information
-                    sNodeInfo = SPA_NODE_INFO_INIT();
-                    sNodeInfo.max_input_ports = UINT32_MAX;
-                    sNodeInfo.max_output_ports = UINT32_MAX;
-                    sNodeInfo.change_mask = SPA_NODE_CHANGE_MASK_FLAGS | SPA_NODE_CHANGE_MASK_PROPS;
-                    sNodeInfo.flags = SPA_NODE_FLAG_RT;
-                    sNodeInfo.props = const_cast<spa_dict *>(sClientDict.dict());
+                        if (pFilter == NULL)
+                        {
+                            lsp_warn("Could not create PipeWire filter");
+                            return STATUS_DISCONNECTED;
+                        }
 
-                    error = pw_client_node_update(
-                        pNode,
-                        PW_CLIENT_NODE_UPDATE_INFO,
-                        0, NULL, &sNodeInfo);
-                    if (error < 0)
-                    {
-                        lsp_warn("Failed to update client node, code=%d", -error);
-                        return STATUS_DISCONNECTED;
+                        pw_filter_add_listener(pFilter, &vHooks[HOOK_FILTER], &filter_events, this);
                     }
-
-                    sNodeInfo.change_mask = 0;
 
                     // Issue sync request
                     error = sync_core(false);
@@ -546,14 +502,6 @@ namespace lsp
                         lsp_warn("Failed to synchrnonize with PipeWire server: code=%d", -error);
                         return STATUS_DISCONNECTED;
                     }
-                }
-
-                // Start notification thread loop
-                error = pw_thread_loop_start(pNotifyThreadLoop);
-                if (error < 0)
-                {
-                    lsp_warn("Failed to start notify thread loop: code=%d", -error);
-                    return STATUS_DISCONNECTED;
                 }
 
                 return STATUS_OK;
@@ -569,12 +517,11 @@ namespace lsp
                         lsp_finally { pw_thread_loop_unlock(pContextThreadLoop); };
 
                         // Destroy node
-                        if (pNode != NULL)
+                        if (pFilter != NULL)
                         {
-                            spa_hook_remove(&vHooks[HOOK_NODE_PROXY]);
-                            spa_hook_remove(&vHooks[HOOK_NODE]);
-                            pw_proxy_destroy(to_pw_proxy(pNode));
-                            pNode       = NULL;
+                            spa_hook_remove(&vHooks[HOOK_FILTER]);
+                            pw_filter_destroy(pFilter);
+                            pFilter     = NULL;
                         }
 
                         // Destroy registry
@@ -612,13 +559,6 @@ namespace lsp
                 pAudioLoop = NULL;
                 pAudioDataLoop = NULL;
 
-                if (pNotifyThreadLoop != NULL)
-                {
-                    pw_thread_loop_destroy(pNotifyThreadLoop);
-                    pNotifyThreadLoop = NULL;
-                    pNotifyLoop = NULL;
-                }
-
                 if (pContextThreadLoop != NULL)
                 {
                     pw_thread_loop_destroy(pContextThreadLoop);
@@ -630,12 +570,6 @@ namespace lsp
                 {
                     mutex_destroy(pMutex);
                     pMutex      = NULL;
-                }
-
-                if (pNotifyBuffer != NULL)
-                {
-                    free(pNotifyBuffer);
-                    pNotifyBuffer = NULL;
                 }
 
                 if (sServerName != NULL)
@@ -655,7 +589,6 @@ namespace lsp
                 sContextDict.destroy();
                 bzero(&sThreadUtils, sizeof(sThreadUtils));
                 bzero(&sNodeInfo, sizeof(sNodeInfo));
-                bzero(&sNotifyRing, sizeof(sNotifyRing));
                 bzero(vHooks, sizeof(spa_hook) * HOOK_TOTAL);
 
                 pCallbacks      = NULL;
@@ -671,7 +604,7 @@ namespace lsp
                 backend_t * const back = cast(self);
 
                 // Check that backend is disconnected
-                if (back->pNode != NULL)
+                if (back->pFilter != NULL)
                     return STATUS_BAD_STATE;
 
                 // Set-up destruction hook
@@ -734,7 +667,7 @@ namespace lsp
 
                 // Ensure that we are connected
                 backend_t * const back = cast(self);
-                if (back->pNode == NULL)
+                if (back->pFilter == NULL)
                     return STATUS_BAD_STATE;
 
                 // Get callbacks table and user data
@@ -783,11 +716,23 @@ namespace lsp
                         pw_data_loop_stop(pAudioDataLoop);
                 };
 
-                // Set node active
-                error = pw_client_node_set_active(pNode, true);
+                /* Now connect this filter. We ask that our process function is
+                 * called in a realtime thread. */
+                error = pw_filter_connect(
+                    pFilter,
+                    PW_FILTER_FLAG_RT_PROCESS,
+                    NULL, 0);
                 if (error < 0)
                 {
-                    lsp_error("Failed to activate PipeWire node: error=%d", int(error));
+                    lsp_error("Failed to connect PipeWire filter: error=%d", int(error));
+                    return STATUS_DISCONNECTED;
+                }
+
+                // Set node active
+                error = pw_filter_set_active(pFilter, true);
+                if (error < 0)
+                {
+                    lsp_error("Failed to activate PipeWire filter: error=%d", int(error));
                     return STATUS_DISCONNECTED;
                 }
                 lsp_finally {
@@ -828,10 +773,18 @@ namespace lsp
                 }
 
                 // Mark node as inactive
-                error = pw_client_node_set_active(pNode, false);
+                error = pw_filter_set_active(pFilter, false);
                 if (error < 0)
                 {
-                    lsp_error("Failed to deactivate PipeWire node: error=%d", int(error));
+                    lsp_error("Failed to deactivate PipeWire filter: error=%d", int(error));
+                    res         = STATUS_UNKNOWN_ERR;
+                }
+
+                // Disconnect the filter
+                error = pw_filter_disconnect(pFilter);
+                if (error < 0)
+                {
+                    lsp_error("Failed to disconnect PipeWire filter: error=%d", int(error));
                     res         = STATUS_UNKNOWN_ERR;
                 }
 
@@ -912,60 +865,6 @@ namespace lsp
                 free(back);
             }
 
-            void backend_t::sync_free_port(port_id_t port)
-            {
-                if (port < 0)
-                    return;
-
-                MUTEX_SCOPED_LOCK(pMutex);
-
-                if (port >= nPortCapacity)
-                    return;
-                unmap_port(&vPorts[port]);
-                free_port(&vPorts[port]);
-            }
-
-            void backend_t::sync_free_port(port_t *port)
-            {
-                MUTEX_SCOPED_LOCK(pMutex);
-
-                unmap_port(port);
-                free_port(port);
-            }
-
-            port_id_t backend_t::sync_alloc_port(const char *id, uint32_t flags)
-            {
-                MUTEX_SCOPED_LOCK(pMutex);
-
-                // Allocate port, check for duplicates
-                if (find_port(id) != NULL)
-                {
-                    lsp_warn("Port id=%s already exists", id);
-                    return -STATUS_ALREADY_EXISTS;
-                }
-                port_t *port        = alloc_port(id, flags);
-                if (port == NULL)
-                    return -STATUS_NO_MEM;
-                lsp_finally { free_port(port); };
-                const port_id_t port_id = port - vPorts;
-
-                // Map port to input or output
-                const spa_direction direction = ((flags & PORT_DIR_MASK) == PORT_DIR_IN) ?
-                    SPA_DIRECTION_INPUT : SPA_DIRECTION_OUTPUT;
-                port_map * const map    = &vPortMap[direction];
-                const port_id_t map_id  = map->map(port_id);
-                if (map_id < 0)
-                {
-                    lsp_error("Error mapping port id=%d as %s port, code=%d",
-                        int(port_id), (direction == SPA_DIRECTION_INPUT) ? "input" : "output", int(map_id));
-                    return map_id;
-                }
-                lsp_finally { unmap_port(port); };
-
-                port    = NULL;
-                return port_id;
-            }
-
             status_t backend_t::register_port(port_t *port)
             {
                 // Allocate port global name
@@ -983,8 +882,9 @@ namespace lsp
                 memcpy(&full_id[name_bytes], port->sID, id_bytes);
 
                 // Initialize dictionary
-                status_t res = port->sDict.put(
-                    PW_KEY_PORT_NAME, full_id,
+                dictionary dict;
+                status_t res = dict.put(
+                    PW_KEY_PORT_NAME, port->sID,
                     PW_KEY_FORMAT_DSP, port_format_dsp(port->nType),
                     PW_KEY_PORT_PHYSICAL, prop_false,
                     PW_KEY_PORT_TERMINAL, prop_false);
@@ -995,60 +895,23 @@ namespace lsp
                 }
 
                 // Setup port pointers
-                int error;
-                const spa_pod *pod_params[8];
-                pipewire::pod_builder pod_builder;
-                spa_port_info * const info  = &port->sInfo;
-                uint32_t num_pod_params     = 0;
+                pw_properties * const port_props = dict.make_properties();
+                if (port_props == NULL)
+                {
+                    lsp_warn("Failed to allocate port properties for port id=%s", port->sID);
+                    return STATUS_NO_MEM;
+                }
 
                 const spa_direction direction   = ((port->nType & PORT_DIR_MASK) == PORT_DIR_IN) ?
                     SPA_DIRECTION_INPUT : SPA_DIRECTION_OUTPUT;
 
-                info->change_mask           = SPA_PORT_CHANGE_MASK_FLAGS | SPA_PORT_CHANGE_MASK_PROPS | SPA_PORT_CHANGE_MASK_PARAMS;
-                info->flags                 = SPA_PORT_FLAG_NO_REF;
-                info->props                 = port->sDict.dict();
-                info->params                = port->vParams;
-                info->n_params              = PARAM_TOTAL;
-
-
-                // Encode port parameters
-                switch (port->nType & PORT_TYPE_MASK)
-                {
-                    case PORT_TYPE_AUDIO:
-                        pod_params[num_pod_params++] = pod_builder.make_audio_format_pod();
-                        pod_params[num_pod_params++] = pod_builder.make_audio_buffers_pod(
-                            sIOParams.max_buffer_size, MAX_BUFFERS);
-                        break;
-                    case PORT_TYPE_MIDI:
-                        pod_params[num_pod_params++] = pod_builder.make_midi_format_pod();
-                        pod_params[num_pod_params++] = pod_builder.make_midi_buffers_pod(
-                            sIOParams.max_buffer_size, MAX_BUFFERS);
-                        break;
-                    default:
-                        break;
-                }
-
-                pod_params[num_pod_params++] = pod_builder.make_pod_io();
-                pod_params[num_pod_params++] = pod_builder.make_pod_async_io();
-                pod_params[num_pod_params++] = pod_builder.make_latency_pod(&port->vLatency[direction]);
-                pod_params[num_pod_params++] = pod_builder.make_latency_pod(&port->vLatency[SPA_DIRECTION_REVERSE(direction)]);
-
-                // Update context
-                {
-                    pw_thread_loop_lock(pContextThreadLoop);
-                    lsp_finally {pw_thread_loop_unlock(pContextThreadLoop); };
-
-                    error = pw_client_node_port_update(
-                        pNode, direction, port->nNodePortId,
-                        PW_CLIENT_NODE_PORT_UPDATE_PARAMS | PW_CLIENT_NODE_PORT_UPDATE_INFO,
-                        num_pod_params, pod_params,
-                        info);
-                }
-                if (error < 0)
-                {
-                    lsp_trace("Error updating node port %s, error=%d", port->sID, int(-error));
-                    return STATUS_UNKNOWN_ERR;
-                }
+                port->pHandle = pw_filter_add_port(
+                    pFilter,
+                    direction,
+                    PW_FILTER_PORT_FLAG_MAP_BUFFERS,
+                    0,
+                    port_props,
+                    NULL, 0);
 
                 // Port has been successfully registered
                 port->sFullId               = release_ptr(full_id);
@@ -1058,33 +921,22 @@ namespace lsp
 
             status_t backend_t::unregister_port(port_t *port)
             {
-                const spa_direction direction   = ((port->nType & PORT_DIR_MASK) == PORT_DIR_IN) ?
-                    SPA_DIRECTION_INPUT : SPA_DIRECTION_OUTPUT;
-
                 // Check that port has been registered
                 if (port->sFullId == NULL)
                     return STATUS_OK;
                 free(port->sFullId);
                 port->sFullId       = NULL;
+                port->pHandle       = NULL;
 
-                // Update port
-                int error;
-                {
-                    pw_thread_loop_lock(pContextThreadLoop);
-                    lsp_finally { pw_thread_loop_unlock(pContextThreadLoop); };
-
-
-                    error = pw_client_node_port_update(
-                        pNode, direction, port->nNodePortId,
-                        0,
-                        0, NULL,
-                        NULL);
-                }
-                if (error < 0)
-                {
-                    lsp_trace("Error updating node port %s, error=%d", port->sID, int(-error));
-                    return STATUS_UNKNOWN_ERR;
-                }
+//                if (port->pHandle != NULL)
+//                {
+//                    int error = pw_filter_remove_port(port->pHandle);
+//                    if (error < 0)
+//                    {
+//                        lsp_trace("Error removing node port %s, error=%d", port->sID, int(-error));
+//                        return STATUS_UNKNOWN_ERR;
+//                    }
+//                }
 
                 return STATUS_OK;
             }
@@ -1143,19 +995,23 @@ namespace lsp
                 else if (id_len >= MAX_PORT_ID_BYTES)
                     return -STATUS_TOO_BIG;
 
-                backend_t * const back          = cast(self);
+                backend_t * const back      = cast(self);
+
+                // Check for duplicates
+                port_t * port               = back->find_port(id);
+                if (port != NULL)
+                    return -STATUS_ALREADY_EXISTS;
 
                 // Allocate port
-                port_id_t port_id               = back->sync_alloc_port(id, flags);
-                if (port_id < 0)
-                    return port_id;
-                lsp_finally { back->sync_free_port(port_id); };
+                port                        = back->alloc_port(id, flags);
+                if (port == NULL)
+                    return -STATUS_NO_MEM;
+                lsp_finally { back->free_port(port); };
 
-                // Need to register port (connected)?
-                if (back->pNode != NULL)
+                // Need to immediately register port (connected)?
+                if (back->pFilter != NULL)
                 {
                     // Register port
-                    port_t * const port         = &back->vPorts[port_id];
                     status_t res                = back->register_port(port);
                     if (res != STATUS_OK)
                         return -res;
@@ -1170,7 +1026,7 @@ namespace lsp
                     }
                 }
 
-                return lsp::exchange(port_id, -1);
+                return release_ptr(port) - back->vPorts;
             }
 
             status_t backend_t::unregister_port(audio::backend_t *self, port_id_t port_id)
@@ -1185,8 +1041,8 @@ namespace lsp
                 if (port->nType == PORT_TYPE_FREE)
                     return STATUS_INVALID_VALUE;
 
-                // Need to unregister port?
-                if (back->pNode != NULL)
+                // Need to immediately unregister port?
+                if (back->pFilter != NULL)
                 {
                     // Register port
                     status_t res                = back->unregister_port(port);
@@ -1204,7 +1060,7 @@ namespace lsp
                 }
 
                 // Deallocate port
-                back->sync_free_port(port);
+                back->free_port(port);
 
                 return STATUS_OK;
             }
@@ -1280,7 +1136,7 @@ namespace lsp
                 bool sync_node_name = false;
                 if (strcmp(type, PW_TYPE_INTERFACE_Node) == 0)
                 {
-                    if (id == back->nNodeGlobalId)
+                    if ((back->pFilter != NULL) && (id == pw_filter_get_node_id(back->pFilter)))
                         sync_node_name  = back->sRegistry.find_node_by_name(back->sClientName) != NULL;
                 }
 
@@ -1288,7 +1144,7 @@ namespace lsp
                 if (res == STATUS_OK)
                 {
                     const node_t * const node = (sync_node_name) ?
-                        back->sRegistry.find_node_by_id(back->nNodeGlobalId) : NULL;
+                        back->sRegistry.find_node_by_id(pw_filter_get_node_id(back->pFilter)) : NULL;
                     if (node != NULL)
                     {
                         char * new_name = strdup(node->sUID);
@@ -1439,6 +1295,42 @@ namespace lsp
                     spa_thread_utils_drop_rt(back->pOldThreadUtils, thread) : -EINVAL;
             }
 
+            void backend_t::on_filter_destroy(void *self)
+            {
+            }
+
+            void backend_t::on_filter_state_changed(void *self, enum pw_filter_state old, enum pw_filter_state state, const char *error)
+            {
+            }
+
+            void backend_t::on_filter_io_changed(void *self, void *port_data, uint32_t id, void *area, uint32_t size)
+            {
+            }
+
+            void backend_t::on_filter_param_changed(void *self, void *port_data, uint32_t id, const struct spa_pod *param)
+            {
+            }
+
+            void backend_t::on_filter_add_buffer(void *self, void *port_data, struct pw_buffer *buffer)
+            {
+            }
+
+            void backend_t::on_filter_remove_buffer(void *self, void *port_data, struct pw_buffer *buffer)
+            {
+            }
+
+            void backend_t::on_filter_process(void *self, struct spa_io_position *position)
+            {
+            }
+
+            void backend_t::on_filter_drained(void *self)
+            {
+            }
+
+            void backend_t::on_filter_command(void *self, const struct spa_command *command)
+            {
+            }
+
             int backend_t::on_node_transport(void *self, int readfd, int writefd, uint32_t mem_id, uint32_t offset, uint32_t size)
             {
                 lsp_trace("self = %p", self);
@@ -1549,13 +1441,13 @@ namespace lsp
 
             int backend_t::on_node_set_activation(void *self, uint32_t node_id, int signalfd, uint32_t mem_id, uint32_t offset, uint32_t size)
             {
-            #ifdef LSP_TRACE
-                backend_t * const back = cast(self);
-                lsp_trace("Activation self=%p (%s), node_id=%d, signalfd=%d, mem_id=%d, offset=%d, size=%d",
-                    self,
-                    (back->nNodeGlobalId == node_id) ? "our" : "set",
-                    int(node_id), int(signalfd), int(mem_id), int(offset), int(size));
-            #endif /* LSP_TRACE */
+//            #ifdef LSP_TRACE
+//                backend_t * const back = cast(self);
+//                lsp_trace("Activation self=%p (%s), node_id=%d, signalfd=%d, mem_id=%d, offset=%d, size=%d",
+//                    self,
+//                    (back->nNodeGlobalId == node_id) ? "our" : "set",
+//                    int(node_id), int(signalfd), int(mem_id), int(offset), int(size));
+//            #endif /* LSP_TRACE */
 
                 return 0;
             }
@@ -1574,7 +1466,6 @@ namespace lsp
             void backend_t::on_node_bound(void *self, uint32_t global_id)
             {
                 backend_t * const back  = cast(self);
-                back->nNodeGlobalId     = global_id;
                 lsp_trace("Node '%s' bound with global_id=%d", back->sClientName, int(global_id));
             }
 
@@ -1653,26 +1544,9 @@ namespace lsp
             void backend_t::init_port(port_t *port)
             {
                 port->nType             = PORT_TYPE_FREE;
-                port->nBuffers          = 0;
+                port->pHandle           = NULL;
                 port->sFullId           = NULL;
                 port->sID[0]            = '\0';
-                port->nNodePortId       = -1;
-
-                port->sInfo             = SPA_PORT_INFO_INIT();
-
-                spa_list_init(&port->vBuffers);
-
-                bzero(port->vLatency, sizeof(port->vLatency));
-                port->vLatency[SPA_DIRECTION_INPUT].direction   = SPA_DIRECTION_INPUT;
-                port->vLatency[SPA_DIRECTION_OUTPUT].direction  = SPA_DIRECTION_OUTPUT;
-
-                port->vParams[PARAM_ENUM_FORMAT]    = SPA_PARAM_INFO(SPA_PARAM_EnumFormat, SPA_PARAM_INFO_READ);
-                port->vParams[PARAM_BUFFERS]        = SPA_PARAM_INFO(SPA_PARAM_Buffers, SPA_PARAM_INFO_READ);
-                port->vParams[PARAM_IO]             = SPA_PARAM_INFO(SPA_PARAM_IO, SPA_PARAM_INFO_READ);
-                port->vParams[PARAM_FORMAT]         = SPA_PARAM_INFO(SPA_PARAM_Format, SPA_PARAM_INFO_WRITE);
-                port->vParams[PARAM_LATENCY]        = SPA_PARAM_INFO(SPA_PARAM_Latency, SPA_PARAM_INFO_READWRITE);
-
-                port->sDict.construct();
             }
 
             backend_t::port_t *backend_t::alloc_port(const char *id, uint32_t flags)
@@ -1706,7 +1580,6 @@ namespace lsp
                         port->sFullId           = NULL;
                         strncpy(port->sID, id, MAX_PORT_ID_BYTES);
                         port->sID[MAX_PORT_ID_BYTES-1]  = '\0';
-                        port->nNodePortId       = -1;
 
                         nPortFirst              = first + 1;
                         return port;
@@ -1718,19 +1591,6 @@ namespace lsp
                 return NULL;
             }
 
-            void backend_t::unmap_port(port_t *port)
-            {
-                if ((port == NULL) || (port->nType == PORT_TYPE_FREE) || (port->nNodePortId < 0))
-                    return;
-
-                const spa_direction direction = ((port->nType & PORT_DIR_MASK) == PORT_DIR_IN) ?
-                    SPA_DIRECTION_INPUT : SPA_DIRECTION_OUTPUT;
-                port_map * const map    = &vPortMap[direction];
-
-                map->unmap(port->nNodePortId);
-                port->nNodePortId   = -1;
-            }
-
             void backend_t::free_port(port_t *port)
             {
                 if ((port == NULL) || (port->nType == PORT_TYPE_FREE))
@@ -1739,7 +1599,6 @@ namespace lsp
                 // Release previously allocated data
                 if (port->sFullId != NULL)
                     free(port->sFullId);
-                port->sDict.destroy();
 
                 // Reset port state
                 init_port(port);

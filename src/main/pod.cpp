@@ -44,7 +44,7 @@ namespace lsp
             {
             }
 
-            spa_pod *pod_builder::make_audio_format_pod()
+            spa_pod *pod_builder::make_audio_format_pod(uint32_t sample_rate)
             {
                 spa_pod_frame frame;
                 spa_pod_builder_push_object(&builder, &frame, SPA_TYPE_OBJECT_Format, SPA_PARAM_EnumFormat);
@@ -53,6 +53,7 @@ namespace lsp
                     SPA_FORMAT_mediaType, SPA_POD_Id(SPA_MEDIA_TYPE_audio),
                     SPA_FORMAT_mediaSubtype, SPA_POD_Id(SPA_MEDIA_SUBTYPE_dsp),
                     SPA_FORMAT_AUDIO_format, SPA_POD_Id(SPA_AUDIO_FORMAT_DSP_F32),
+                    SPA_FORMAT_AUDIO_rate, SPA_POD_Id(sample_rate),
                     0);
                 return static_cast<spa_pod *>(spa_pod_builder_pop(&builder, &frame));
             }

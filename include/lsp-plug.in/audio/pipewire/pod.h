@@ -50,7 +50,7 @@ namespace lsp
                     pod_builder & operator = (pod_builder &&) = delete;
 
                 public:
-                    spa_pod        *make_audio_format_pod();
+                    spa_pod        *make_audio_format_pod(uint32_t sample_rate);
                     spa_pod        *make_midi_format_pod();
                     spa_pod        *make_audio_buffers_pod(size_t max_buffer_size, size_t max_buffers);
                     spa_pod        *make_midi_buffers_pod(size_t max_buffer_size, size_t max_buffers);

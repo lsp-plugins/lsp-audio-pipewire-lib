@@ -116,6 +116,37 @@ namespace lsp
                 return "unknown";
             }
 
+            inline const char * decode_spa_param_id(uint32_t id)
+            {
+                #define V(key) \
+                    case key: return # key;
+
+                switch (id)
+                {
+                    V(SPA_PARAM_Invalid)
+                    V(SPA_PARAM_PropInfo)
+                    V(SPA_PARAM_Props)
+                    V(SPA_PARAM_EnumFormat)
+                    V(SPA_PARAM_Format)
+                    V(SPA_PARAM_Buffers)
+                    V(SPA_PARAM_Meta)
+                    V(SPA_PARAM_IO)
+                    V(SPA_PARAM_Profile)
+                    V(SPA_PARAM_EnumPortConfig)
+                    V(SPA_PARAM_PortConfig)
+                    V(SPA_PARAM_EnumRoute)
+                    V(SPA_PARAM_Route)
+                    V(SPA_PARAM_Control)
+                    V(SPA_PARAM_Latency)
+                    V(SPA_PARAM_ProcessLatency)
+                    V(SPA_PARAM_Tag)
+                    default: break;
+                }
+                #undef V
+
+                return "unknown";
+            }
+
         } /* namespace pipewire */
     }  /* namespace audio */
 }  /* namespace lsp */

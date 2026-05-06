@@ -63,24 +63,20 @@ namespace lsp
                         HOOK_TOTAL
                     };
 
-                    enum port_params_t
-                    {
-                        PARAM_ENUM_FORMAT,
-                        PARAM_BUFFERS,
-                        PARAM_IO,
-                        PARAM_FORMAT,
-                        PARAM_LATENCY,
-
-                        PARAM_TOTAL
-                    };
+                    struct port_data_t;
 
                     typedef struct port_t
                     {
                         uint32_t            nType;
-                        void               *pHandle;
+                        port_data_t        *pHandle;
                         char               *sFullId;
                         char                sID[MAX_PORT_ID_BYTES];
                     } port_t;
+
+                    typedef struct port_data_t
+                    {
+                        port_id_t           nPortId;
+                    } port_data_t;
 
                     typedef memmap<spa_io_position>     mm_io_position;
                     typedef memmap<spa_io_clock>        mm_io_clock;
@@ -89,8 +85,6 @@ namespace lsp
                     static const pw_registry_events         registry_events;
                     static const pw_core_events             core_events;
                     static const pw_filter_events           filter_events;
-                    static const pw_client_node_events      node_events;
-                    static const pw_proxy_events            node_proxy_events;
                     static const spa_thread_utils_methods   thread_utils_impl;
 
                 public:
@@ -112,11 +106,7 @@ namespace lsp
                     dictionary          sClientDict;
                     dictionary          sContextDict;
                     spa_thread_utils    sThreadUtils;
-                    spa_node_info       sNodeInfo;
                     spa_hook            vHooks[HOOK_TOTAL];
-                    port_map            vPortMap[2];
-                    mm_io_position      mmPosition;
-                    mm_io_clock         mmClock;
 
                     void               *pUserData;
                     const callbacks_t  *pCallbacks;
@@ -132,8 +122,8 @@ namespace lsp
                     bool                bActivated;
 
                 public:
-                    explicit            backend_t();
-                    void                construct();
+                    explicit            backend_t() noexcept;
+                    void                construct() noexcept;
 
                 protected:
                     // PipeWire registry events
@@ -169,30 +159,6 @@ namespace lsp
                     static void         on_filter_command(void *self, const struct spa_command *command);
 
                 protected:
-                    // PipeWire node events
-                    static int          on_node_transport(void *self, int readfd, int writefd, uint32_t mem_id, uint32_t offset, uint32_t size);
-                    static int          on_node_set_param(void *self, uint32_t id, uint32_t flags, const spa_pod *param);
-                    static int          on_node_set_io(void *self, uint32_t id, uint32_t mem_id, uint32_t offset, uint32_t size);
-                    static int          on_node_event(void *self, const struct spa_event *event);
-                    static int          on_node_command(void *self, const struct spa_command *command);
-                    static int          on_node_add_port(void *self, spa_direction direction, uint32_t port_id, const spa_dict *props);
-                    static int          on_node_remove_port(void *self, spa_direction direction, uint32_t port_id);
-                    static int          on_node_port_set_param(void *self, spa_direction direction, uint32_t port_id, uint32_t id, uint32_t flags, const spa_pod *param);
-                    static int          on_node_port_use_buffers(void *self, spa_direction direction, uint32_t port_id, uint32_t mix_id, uint32_t flags, uint32_t n_buffers, pw_client_node_buffer *buffers);
-                    static int          on_node_port_set_io(void *self, spa_direction direction, uint32_t port_id, uint32_t mix_id, uint32_t id, uint32_t mem_id, uint32_t offset, uint32_t size);
-                    static int          on_node_set_activation(void *self, uint32_t node_id, int signalfd, uint32_t mem_id, uint32_t offset, uint32_t size);
-                    static int          on_node_port_set_mix_info(void *self, spa_direction direction, uint32_t port_id, uint32_t mix_id, uint32_t peer_id, const spa_dict *props);
-
-                protected:
-                    // PipeWire node proxy events
-                    static void         on_node_destroy(void *self);
-                    static void         on_node_bound(void *self, uint32_t global_id);
-                    static void         on_node_removed(void *self);
-                    static void         on_node_done(void *self, int seq);
-                    static void         on_node_error(void *self, int seq, int res, const char *message);
-                    static void         on_node_bound_props(void *self, uint32_t global_id, const struct spa_dict *props);
-
-                protected:
                     // PipeWire thread utils methods
                     static spa_thread  *on_thread_create(void *self, const spa_dict *props, void *(*start)(void*), void *arg);
                     static int          on_thread_join(void *self, struct spa_thread *thread, void **retval);
@@ -209,24 +175,26 @@ namespace lsp
                     static int          execute_context_properties_match(void *self, const char *location, const char *action, const char *val, size_t len);
 
                 protected:
-                    int                 sync_core(bool lock);
+                    int                 sync_core(bool lock) noexcept;
                     status_t            make_connection(
                         const connection_params_t *params,
                         const callbacks_t *callbacks,
-                        void *user_data);
-                    status_t            activate();
-                    status_t            deactivate();
-                    void                close_connection();
-                    status_t            register_port(port_t *port);
-                    status_t            unregister_port(port_t *port);
-                    status_t            register_ports();
-                    void                unregister_ports();
+                        void *user_data) noexcept;
+                    status_t            activate() noexcept;
+                    status_t            deactivate() noexcept;
+                    void                close_connection() noexcept;
+                    status_t            register_port(port_t *port) noexcept;
+                    status_t            unregister_port(port_t *port) noexcept;
+                    status_t            register_ports() noexcept;
+                    void                unregister_ports() noexcept;
+                    void                update_sample_rate(const struct spa_pod *param) noexcept;
 
                 protected:
-                    static void         init_port(port_t *port);
-                    port_t             *find_port(const char *id);
-                    void                free_port(port_t *port);
-                    port_t             *alloc_port(const char *id, uint32_t flags);
+                    static void         init_port(port_t *port) noexcept;
+                    port_t             *find_port(const char *id) noexcept;
+                    void                free_port(port_t *port) noexcept;
+                    port_t             *alloc_port(const char *id, uint32_t flags) noexcept;
+                    char               *make_port_full_id(const char *id) const noexcept;
 
                 public:
                     static status_t     connect(

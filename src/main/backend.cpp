@@ -26,6 +26,7 @@
 #include <lsp-plug.in/common/status.h>
 
 #include <lsp-plug.in/audio/pipewire/backend.h>
+#include <lsp-plug.in/audio/pipewire/messages.h>
 #include <lsp-plug.in/audio/pipewire/pod.h>
 #include <lsp-plug.in/audio/pipewire/impl/cast.h>
 #include <lsp-plug.in/audio/pipewire/impl/memmap.h>
@@ -128,6 +129,7 @@ namespace lsp
                 pOldThreadUtils                 = NULL;
 
                 sRegistry.construct();
+                sRingBuffer.construct();
                 sClientDict.construct();
                 sContextDict.construct();
                 bzero(&sThreadUtils, sizeof(sThreadUtils));
@@ -258,6 +260,14 @@ namespace lsp
                     return STATUS_UNKNOWN_ERR;
                 }
                 pContextLoop = pw_thread_loop_get_loop(pContextThreadLoop);
+
+                // Bind ring buffer
+                res = sRingBuffer.init(pContextLoop, RING_BUFFER_SIZE, on_ringbuffer_data_received, this);
+                if (res != STATUS_OK)
+                {
+                    lsp_warn("Failed to initialize ring buffer handler, code=%d", int(res));
+                    return res;
+                }
 
                 // Create context
                 {
@@ -542,6 +552,7 @@ namespace lsp
                 }
 
                 sRegistry.destroy();
+                sRingBuffer.destroy();
                 sClientDict.destroy();
                 sContextDict.destroy();
                 bzero(&sThreadUtils, sizeof(sThreadUtils));
@@ -799,7 +810,14 @@ namespace lsp
 
             status_t backend_t::set_latency(audio::backend_t *self, uint32_t latency)
             {
-                return STATUS_NOT_IMPLEMENTED;
+                backend_t * const back  = cast(self);
+
+                // Notify the main thread about latency change
+                message_t msg;
+                init_header(&msg.header, MSG_LATENCY, sizeof(latency_t));
+                msg.latency.latency = latency;
+
+                return write_message(&back->sRingBuffer, &msg);
             }
 
             void backend_t::destroy(audio::backend_t *self)
@@ -1316,17 +1334,67 @@ namespace lsp
                 if ((pCallbacks == NULL) || (pCallbacks->on_io_changed == NULL))
                     return;
 
-                // Perform sample rate change callbacke
-                pw_thread_loop_lock(pContextThreadLoop);
-                lsp_finally { pw_thread_loop_unlock(pContextThreadLoop); };
+                // Stop data loop first and deactivate filter
+                int error = pw_filter_set_active(pFilter, false);
+                if (error >= 0)
+                    error = pw_data_loop_stop(pAudioDataLoop);
+                if (error < 0)
+                {
+                    notify_connection_lost(false);
+                    return;
+                }
 
-                pw_filter_set_active(pFilter, false);
-
+                // Issue IO changed callback
                 status_t res = pCallbacks->on_io_changed(pUserData, &sIOParams);
-                if (res == STATUS_OK)
-                    pw_filter_set_active(pFilter, true);
-                else
-                    pw_filter_set_error(pFilter, EACCES, "Failed to update I/O for the filter");
+                if (res != STATUS_OK)
+                {
+                    notify_connection_lost(false);
+                    return;
+                }
+
+                // Activate filter and data loop back
+                error = pw_filter_set_active(pFilter, true);
+                if (error >= 0)
+                    error = pw_data_loop_start(pAudioDataLoop);
+                if (error < 0)
+                {
+                    lsp_error("Failed to update filter sample rate, error=%d", -error);
+                    notify_connection_lost(false);
+                }
+            }
+
+            void backend_t::update_latency(uint32_t latency) noexcept
+            {
+                // Stop audio data loop and deactivate filter
+                int error = pw_filter_set_active(pFilter, false);
+                if (error >= 0)
+                    error = pw_data_loop_stop(pAudioDataLoop);
+
+                // Update filter parameters
+                if (error >= 0)
+                {
+                    pod_builder builder;
+                    const spa_pod *pod = builder.make_process_latency_pod(latency, sIOParams.sample_rate);
+                    error = pw_filter_update_params(pFilter, NULL, &pod, 1);
+                    if (error >= 0)
+                    {
+                        lsp_trace("Updated filter latency %d -> %d", int(nLatency), int(latency));
+                        nLatency    = latency;
+                    }
+                }
+
+                // Activate filter and data loop back
+                if (error >= 0)
+                    error = pw_filter_set_active(pFilter, true);
+                if (error >= 0)
+                    error = pw_data_loop_start(pAudioDataLoop);
+
+                // Report error if occurred
+                if (error < 0)
+                {
+                    lsp_error("Failed to update filter latency, error=%d", -error);
+                    notify_connection_lost(false);
+                }
             }
 
             void backend_t::on_filter_param_changed(void *self, void *port_data, uint32_t id, const struct spa_pod *param)
@@ -1368,7 +1436,16 @@ namespace lsp
 
             void backend_t::on_filter_process(void *self, struct spa_io_position *position)
             {
-                lsp_trace("self=%p, position=%p", self, position);
+                backend_t * const back  = cast(self);
+                if ((back->pCallbacks == NULL) || (back->pCallbacks->on_process == NULL))
+                    return;
+
+                const uint32_t samples  = position->clock.duration;
+
+                // TODO: update sIOPosition
+
+                // Issue callback
+                back->pCallbacks->on_process(back->pUserData, &back->sIOPosition, samples);
             }
 
             void backend_t::on_filter_drained(void *self)
@@ -1397,6 +1474,58 @@ namespace lsp
             void backend_t::on_notify_event(void *self, uint64_t count)
             {
                 lsp_trace("self = %p", self);
+            }
+
+            void backend_t::notify_connection_lost(bool stop) noexcept
+            {
+                if (stop)
+                {
+                    pw_thread_loop_lock(pContextThreadLoop);
+                    lsp_finally { pw_thread_loop_unlock(pContextThreadLoop); };
+                    pw_data_loop_stop(pAudioDataLoop);
+                }
+
+                if ((pCallbacks != NULL) && (pCallbacks->on_connection_lost))
+                    pCallbacks->on_connection_lost(pUserData);
+            }
+
+            void backend_t::on_ringbuffer_data_received(void *self, uint64_t count)
+            {
+                backend_t * const back  = cast(self);
+                uint32_t latency        = back->nLatency;
+
+                // Process all incoming messages
+                message_t message;
+                while (true)
+                {
+                    // Try to read next message
+                    const status_t res  = read_message(&message, &back->sRingBuffer);
+                    if (res == STATUS_NO_DATA)
+                        break;
+
+                    // Break on error
+                    if (res != STATUS_OK)
+                    {
+                        lsp_error("Failed to read message from ring buffer, connection corrupted, code=%d", int(res));
+                        back->notify_connection_lost(true);
+                        return;
+                    }
+
+                    switch (message.header.type)
+                    {
+                        case MSG_LATENCY:
+                            latency         = message.latency.latency;
+                            break;
+                        default:
+                            lsp_error("Received unknown message from ring buffer, type=%d", int(message.header.type));
+                            back->notify_connection_lost(true);
+                            return;
+                    }
+                }
+
+                // Synchronize state
+                if (back->nLatency != latency)
+                    back->update_latency(latency);
             }
 
             int backend_t::execute_context_properties_match(void *self, const char *location, const char *action, const char *val, size_t len)

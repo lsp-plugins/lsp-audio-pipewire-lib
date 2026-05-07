@@ -31,6 +31,8 @@ MTEST_BEGIN("pipewire", client)
         audio::pipewire::backend_t *back;
         audio::port_id_t            audio_in[2];
         audio::port_id_t            audio_out[2];
+        size_t                      latency;
+        size_t                      num_processed;
         bool                        connected;
         bool                        activated;
     };
@@ -90,12 +92,22 @@ MTEST_BEGIN("pipewire", client)
     {
         client_t * const client = static_cast<client_t *>(user_data);
         test_type_t * const test = client->test;
+        audio::pipewire::backend_t * const back = client->back;
 
         client->test->printf("on_process\n");
 
         MTEST_ASSERT_PTR(test, client->activated);
         MTEST_ASSERT_PTR(test, client->connected);
 
+        // Change latency after 2 seconds of processing
+        client->num_processed += frames;
+        if ((client->num_processed >= 2*48000) && (client->latency == 0))
+        {
+            constexpr uint32_t new_latency = 512;
+            status_t res = back->set_latency(back, new_latency);
+            if (res == STATUS_OK)
+                client->latency     = new_latency;
+        }
 
 
         return STATUS_OK;
@@ -148,6 +160,8 @@ MTEST_BEGIN("pipewire", client)
         client.audio_in[1]  = -1;
         client.audio_out[0] = -1;
         client.audio_out[1] = -1;
+        client.latency      = 0;
+        client.num_processed= 0;
         client.connected    = false;
         client.activated    = false;
 

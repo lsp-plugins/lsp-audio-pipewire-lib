@@ -30,6 +30,7 @@
 #include <lsp-plug.in/audio/pipewire/mutex.h>
 #include <lsp-plug.in/audio/pipewire/port_map.h>
 #include <lsp-plug.in/audio/pipewire/registry.h>
+#include <lsp-plug.in/audio/pipewire/ringbuffer.h>
 
 #include <pipewire/pipewire.h>
 #include <pipewire/extensions/client-node.h>
@@ -103,6 +104,7 @@ namespace lsp
                     spa_thread_utils   *pOldThreadUtils;
 
                     registry            sRegistry;
+                    ringbuffer          sRingBuffer;
                     dictionary          sClientDict;
                     dictionary          sContextDict;
                     spa_thread_utils    sThreadUtils;
@@ -127,24 +129,24 @@ namespace lsp
 
                 protected:
                     // PipeWire registry events
-                    static void          on_registry_event_global(
+                    static void         on_registry_event_global(
                         void *self, uint32_t id,
                         uint32_t permissions, const char *type, uint32_t version,
                         const spa_dict *props);
-                    static void          on_registry_event_removed(void *self, uint32_t id);
+                    static void         on_registry_event_removed(void *self, uint32_t id);
 
                 protected:
                     // PipeWire core events
-                    static void          on_core_info(void *self, const struct pw_core_info *info);
-                    static void          on_core_done(void *self, uint32_t id, int seq);
-                    static void          on_core_ping(void *self, uint32_t id, int seq);
-                    static void          on_core_error(void *self, uint32_t id, int seq, int res, const char *message);
-                    static void          on_core_remove_id(void *self, uint32_t id);
-                    static void          on_core_bound_id(void *self, uint32_t id, uint32_t global_id);
-                    static void          on_core_add_mem(void *self, uint32_t id, uint32_t type, int fd, uint32_t flags);
-                    static void          on_core_remove_mem(void *self, uint32_t id);
+                    static void         on_core_info(void *self, const struct pw_core_info *info);
+                    static void         on_core_done(void *self, uint32_t id, int seq);
+                    static void         on_core_ping(void *self, uint32_t id, int seq);
+                    static void         on_core_error(void *self, uint32_t id, int seq, int res, const char *message);
+                    static void         on_core_remove_id(void *self, uint32_t id);
+                    static void         on_core_bound_id(void *self, uint32_t id, uint32_t global_id);
+                    static void         on_core_add_mem(void *self, uint32_t id, uint32_t type, int fd, uint32_t flags);
+                    static void         on_core_remove_mem(void *self, uint32_t id);
                 #ifdef PIPEWIRE_HAS_BOUND_PROPS
-                    static void          on_core_bound_props(void *self, uint32_t id, uint32_t global_id, const struct spa_dict *props);
+                    static void         on_core_bound_props(void *self, uint32_t id, uint32_t global_id, const struct spa_dict *props);
                 #endif /* PIPEWIRE_HAS_BOUND_PROPS */
 
                 protected:
@@ -171,6 +173,10 @@ namespace lsp
                     static void         on_notify_event(void *self, uint64_t count);
 
                 protected:
+                    // PipeWire ringbuffer events
+                    static void         on_ringbuffer_data_received(void *self, uint64_t count);
+
+                protected:
                     // PipeWire miscellaneous processing
                     static int          execute_context_properties_match(void *self, const char *location, const char *action, const char *val, size_t len);
 
@@ -188,6 +194,8 @@ namespace lsp
                     status_t            register_ports() noexcept;
                     void                unregister_ports() noexcept;
                     void                update_sample_rate(const struct spa_pod *param) noexcept;
+                    void                notify_connection_lost(bool stop) noexcept;
+                    void                update_latency(uint32_t latency) noexcept;
 
                 protected:
                     static void         init_port(port_t *port) noexcept;

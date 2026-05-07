@@ -55,6 +55,7 @@ namespace lsp
                     spa_pod        *make_audio_buffers_pod(size_t max_buffer_size, size_t max_buffers);
                     spa_pod        *make_midi_buffers_pod(size_t max_buffer_size, size_t max_buffers);
                     spa_pod        *make_latency_pod(const spa_latency_info *info);
+                    spa_pod        *make_process_latency_pod(uint32_t latency, uint32_t sample_rate);
                     spa_pod        *make_pod_io();
                     spa_pod        *make_pod_async_io();
             };

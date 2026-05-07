@@ -76,11 +76,13 @@ namespace lsp
                 spa_pod_builder_push_object(&builder, &frame, SPA_TYPE_OBJECT_ParamBuffers, SPA_PARAM_Buffers);
                 spa_pod_builder_add(
                     &builder,
-                    SPA_PARAM_BUFFERS_buffers, SPA_POD_CHOICE_RANGE_Int(1, 1, int(max_buffers)),
-                    SPA_PARAM_BUFFERS_blocks, SPA_POD_Int(1),
+                    SPA_PARAM_BUFFERS_buffers, SPA_POD_CHOICE_RANGE_Int(int32_t(1), int32_t(1), int(max_buffers)),
+                    SPA_PARAM_BUFFERS_blocks, SPA_POD_Int(int32_t(1)),
                     SPA_PARAM_BUFFERS_size, SPA_POD_CHOICE_STEP_Int(
-                        int(max_buffer_size * sizeof(float)),
-                        sizeof(float), INT32_MAX, sizeof(float)),
+                        int32_t(max_buffer_size * sizeof(float)),
+                        int32_t(sizeof(float)),
+                        int32_t(INT32_MAX),
+                        int32_t(sizeof(float))),
                     SPA_PARAM_BUFFERS_stride,  SPA_POD_Int(sizeof(float)),
                     0);
 
@@ -93,11 +95,13 @@ namespace lsp
                 spa_pod_builder_push_object(&builder, &frame, SPA_TYPE_OBJECT_ParamBuffers, SPA_PARAM_Buffers);
                 spa_pod_builder_add(
                     &builder,
-                    SPA_PARAM_BUFFERS_buffers, SPA_POD_CHOICE_RANGE_Int(1, 1, int(max_buffers)),
-                    SPA_PARAM_BUFFERS_blocks, SPA_POD_Int(1),
+                    SPA_PARAM_BUFFERS_buffers, SPA_POD_CHOICE_RANGE_Int(int32_t(1), int32_t(1), int(max_buffers)),
+                    SPA_PARAM_BUFFERS_blocks, SPA_POD_Int(int32_t(1)),
                     SPA_PARAM_BUFFERS_size, SPA_POD_CHOICE_STEP_Int(
-                        int(max_buffer_size),
-                        1, INT32_MAX, 1),
+                        int32_t(max_buffer_size),
+                        int32_t(1),
+                        int32_t(INT32_MAX),
+                        int32_t(1)),
                     SPA_PARAM_BUFFERS_stride, SPA_POD_Int(1),
                     0);
 
@@ -109,6 +113,22 @@ namespace lsp
                 return spa_latency_build(&builder, SPA_PARAM_Latency, info);
             }
 
+            spa_pod *pod_builder::make_process_latency_pod(uint32_t latency, uint32_t sample_rate)
+            {
+                const float quantum_latency = float(latency) / float(sample_rate);
+
+                spa_pod_frame frame;
+                spa_pod_builder_push_object(&builder, &frame, SPA_TYPE_OBJECT_ParamProcessLatency, SPA_PARAM_ProcessLatency);
+                spa_pod_builder_add(
+                    &builder,
+                    SPA_PARAM_PROCESS_LATENCY_quantum, SPA_POD_Float(float(quantum_latency)),
+                    SPA_PARAM_PROCESS_LATENCY_rate, SPA_POD_Int(int32_t(0)),
+                    SPA_PARAM_PROCESS_LATENCY_ns, SPA_POD_Long(int64_t(0)),
+                    0);
+
+                return static_cast<spa_pod *>(spa_pod_builder_pop(&builder, &frame));
+            }
+
             spa_pod *pod_builder::make_pod_io()
             {
                 spa_pod_frame frame;
@@ -116,7 +136,7 @@ namespace lsp
                 spa_pod_builder_add(
                     &builder,
                     SPA_PARAM_IO_id, SPA_POD_Id(SPA_IO_Buffers),
-                    SPA_PARAM_IO_size, SPA_POD_Int(sizeof(spa_io_buffers)),
+                    SPA_PARAM_IO_size, SPA_POD_Int(int32_t(sizeof(spa_io_buffers))),
                     0);
 
                 return static_cast<spa_pod *>(spa_pod_builder_pop(&builder, &frame));
@@ -129,7 +149,7 @@ namespace lsp
                 spa_pod_builder_add(
                     &builder,
                     SPA_PARAM_IO_id, SPA_POD_Id(SPA_IO_AsyncBuffers),
-                    SPA_PARAM_IO_size, SPA_POD_Int(sizeof(spa_io_async_buffers)),
+                    SPA_PARAM_IO_size, SPA_POD_Int(int32_t(sizeof(spa_io_async_buffers))),
                     0);
 
                 return static_cast<spa_pod *>(spa_pod_builder_pop(&builder, &frame));

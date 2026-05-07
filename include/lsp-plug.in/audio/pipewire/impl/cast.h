@@ -45,7 +45,7 @@ namespace lsp
             constexpr const char *PORT_FORMAT_DSP_MIDI          = "8 bit raw UMP";
             constexpr const char *PORT_FORMAT_DSP_OTHER         = "other";
 
-            static const uint32_t MAX_BUFFERS                   = 2;
+            constexpr const uint32_t RING_BUFFER_SIZE           = 0x1000;
 
             static inline pipewire::backend_t *cast(audio::backend_t *self)
             {

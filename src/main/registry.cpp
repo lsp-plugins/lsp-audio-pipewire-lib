@@ -345,7 +345,34 @@ namespace lsp
                 return item;
             }
 
-            status_t registry::process_add(uint32_t id, uint32_t permissions, const char *type, uint32_t version, const spa_dict *props)
+            char *registry::make_unique_id(const char *prefix, uint32_t id) noexcept
+            {
+                // First check that there is no node with such name as the prefix
+                if (!find_node_by_uid(prefix))
+                    return strdup(prefix);
+
+                // Try to add node id to the name
+                char *uid = strfmt("%s-%u", prefix, (unsigned int)(id));
+                if (uid == NULL)
+                    return NULL;
+                if (!find_node_by_uid(uid))
+                    return uid;
+
+                // Use additional index if the node with such identifier already exists
+                for (int i=0; ; ++i)
+                {
+                    free(uid);
+                    uid = strfmt("%s-%u-%d", prefix, (unsigned int)(id), i);
+                    if (uid == NULL)
+                        return NULL;
+
+                    if (!find_node_by_uid(uid))
+                        return uid;
+                }
+                return NULL;
+            }
+
+            status_t registry::process_add(uint32_t id, uint32_t permissions, const char *type, uint32_t version, const spa_dict *props) noexcept
             {
                 if (id == SPA_ID_INVALID)
                     return STATUS_BAD_ARGUMENTS;
@@ -432,7 +459,7 @@ namespace lsp
                         if ((node->sNick = strdup(node_nick)) == NULL)
                             return STATUS_NO_MEM;
                     }
-                    if ((node->sUID = strfmt("%s-%u", uid_seed, (unsigned int)(id))) == NULL)
+                    if ((node->sUID = make_unique_id(uid_seed, id)) == NULL)
                         return STATUS_NO_MEM;
 
                     // Add to storage
@@ -542,7 +569,7 @@ namespace lsp
                 return STATUS_OK;
             }
 
-            status_t registry::process_remove(uint32_t id)
+            status_t registry::process_remove(uint32_t id) noexcept
             {
                 client_t * const client     = remove_by_id<client_t>(vClients, id);
                 if (client != NULL)
@@ -609,6 +636,17 @@ namespace lsp
                 {
                     const node_t * const node = static_cast<const node_t *>(vNodes.vObjects[i]);
                     if (strcmp(node->sName, name) == 0)
+                        return node;
+                }
+                return NULL;
+            }
+
+            const node_t *registry::find_node_by_uid(const char *uid) const
+            {
+                for (size_t i=0, n=vNodes.nCount; i<n; ++i)
+                {
+                    const node_t * const node = static_cast<const node_t *>(vNodes.vObjects[i]);
+                    if (strcmp(node->sUID, uid) == 0)
                         return node;
                 }
                 return NULL;

@@ -78,6 +78,9 @@ namespace lsp
                     static inline port_t       *alloc_port() noexcept;
                     static inline link_t       *alloc_link() noexcept;
 
+                protected:
+                    char           *make_unique_id(const char *prefix, uint32_t id) noexcept;
+
                 public:
                     registry() noexcept;
                     registry(const registry &) = delete;
@@ -91,12 +94,13 @@ namespace lsp
                     void            destroy() noexcept;
 
                 public: // PipeWire management interface
-                    status_t        process_add(uint32_t id, uint32_t permissions, const char *type, uint32_t version, const spa_dict *props);
-                    status_t        process_remove(uint32_t id);
+                    status_t        process_add(uint32_t id, uint32_t permissions, const char *type, uint32_t version, const spa_dict *props) noexcept;
+                    status_t        process_remove(uint32_t id) noexcept;
 
                 public:
                     const node_t   *find_node_by_id(uint32_t id) const;
                     const node_t   *find_node_by_name(const char *name) const;
+                    const node_t   *find_node_by_uid(const char *uid) const;
             };
         } /* namespace pipewire */
     }  /* namespace audio */

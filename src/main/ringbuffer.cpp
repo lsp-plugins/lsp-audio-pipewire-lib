@@ -21,6 +21,7 @@
 
 #include <lsp-plug.in/audio/pipewire/ringbuffer.h>
 #include <lsp-plug.in/common/alloc.h>
+#include <errno.h>
 
 namespace lsp
 {

@@ -922,6 +922,7 @@ namespace lsp
                 free(port->sFullId);
                 port->sFullId       = NULL;
                 port->pHandle       = NULL;
+                port->pBuffer       = NULL;
 
 //                if (port->pHandle != NULL)
 //                {
@@ -1086,12 +1087,36 @@ namespace lsp
 
             size_t backend_t::audio_buffers_count(audio::backend_t *self, port_id_t port_id)
             {
-                return 0;
+                backend_t * const back  = cast(self);
+                if ((port_id < 0) || (port_id >= back->nPortCapacity))
+                    return 0;
+
+                port_t * const port = &back->vPorts[port_id];
+                if ((port->nType == PORT_TYPE_FREE) ||
+                    ((port->nType & PORT_TYPE_MASK) != PORT_TYPE_AUDIO))
+                    return 0;
+
+                pw_buffer * const buf = port->pBuffer;
+                return (buf != NULL) ? buf->buffer->n_datas : 0;
             }
 
             float *backend_t::get_audio_buffer(audio::backend_t *self, port_id_t port_id, size_t index)
             {
-                return NULL;
+                backend_t * const back  = cast(self);
+                if ((port_id < 0) || (port_id >= back->nPortCapacity))
+                    return NULL;
+
+                port_t * const port = &back->vPorts[port_id];
+                if ((port->nType == PORT_TYPE_FREE) ||
+                    ((port->nType & PORT_TYPE_MASK) != PORT_TYPE_AUDIO))
+                    return NULL;
+
+                // Ensure that we have data to return
+                pw_buffer * const buf = port->pBuffer;
+                if ((buf == NULL) || (buf->buffer->n_datas < index))
+                    return NULL;
+
+                return static_cast<float *>(buf->buffer->datas[index].data);
             }
 
             size_t backend_t::midi_events_count(audio::backend_t *self, port_id_t port_id)
@@ -1440,12 +1465,55 @@ namespace lsp
                 if ((back->pCallbacks == NULL) || (back->pCallbacks->on_process == NULL))
                     return;
 
+                // Dequeue all port buffers
                 const uint32_t samples  = position->clock.duration;
+                for (port_id_t i=0; i<back->nPortCapacity; ++i)
+                {
+                    port_t * const port     = &back->vPorts[i];
+                    if (port->nType == PORT_TYPE_FREE)
+                        continue;
+
+                    pw_buffer * const buf   = pw_filter_dequeue_buffer(port->pHandle);
+                    if (buf == NULL)
+                        continue;
+
+                    port->pBuffer           = buf;
+                    if (buf->buffer->n_datas < 1)
+                        continue;
+
+                    // Initialize output chunks if available
+                    spa_data * const data   = &buf->buffer->datas[0];
+                    if (port->nType == PORT_AUDIO_OUT)
+                    {
+                        data->chunk->offset     = 0;
+                        data->chunk->size       = samples * sizeof(float);
+                        data->chunk->stride     = sizeof(float);
+                        data->chunk->flags      = 0;
+                    }
+                    else if (port->nType == PORT_MIDI_OUT)
+                    {
+                        data->chunk->offset     = 0;
+                        data->chunk->size       = 0;
+                        data->chunk->stride     = 1;
+                        data->chunk->flags      = 0;
+                    }
+                }
 
                 // TODO: update sIOPosition
 
                 // Issue callback
                 back->pCallbacks->on_process(back->pUserData, &back->sIOPosition, samples);
+
+                // Queue all available port buffers
+                for (port_id_t i=0; i<back->nPortCapacity; ++i)
+                {
+                    port_t * const port = &back->vPorts[i];
+                    if ((port->nType != PORT_TYPE_FREE) && (port->pBuffer != NULL))
+                    {
+                        pw_filter_queue_buffer(port->pHandle, port->pBuffer);
+                        port->pBuffer       = NULL;
+                    }
+                }
             }
 
             void backend_t::on_filter_drained(void *self)
@@ -1573,6 +1641,7 @@ namespace lsp
             {
                 port->nType             = PORT_TYPE_FREE;
                 port->pHandle           = NULL;
+                port->pBuffer           = NULL;
                 port->sFullId           = NULL;
                 port->sID[0]            = '\0';
             }

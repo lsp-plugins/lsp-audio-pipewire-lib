@@ -94,10 +94,45 @@ MTEST_BEGIN("pipewire", client)
         test_type_t * const test = client->test;
         audio::pipewire::backend_t * const back = client->back;
 
-        client->test->printf("on_process\n");
+        test->printf("on_process\n");
 
         MTEST_ASSERT_PTR(test, client->activated);
         MTEST_ASSERT_PTR(test, client->connected);
+
+        // Bypass audio signal
+        for (size_t channel=0; channel<2; ++channel)
+        {
+            const audio::port_id_t out_id = client->audio_out[channel];
+
+            // Get output buffer
+            const size_t out_buffers = back->audio_buffers_count(back, out_id);
+            if (out_buffers < 1)
+                continue;
+            float * const out = back->get_audio_buffer(back, out_id, 0);
+            if (out == NULL)
+            {
+                test->printf("out == NULL\n");
+                continue;
+            }
+
+            // Initialize output buffer
+            for (size_t n=0; n<frames; ++n)
+                out[n]          = 0.0f;
+
+            // Get input buffers
+            const audio::port_id_t in_id = client->audio_in[channel];
+            const size_t in_buffers = back->audio_buffers_count(back, in_id);
+            for (size_t j=0; j<in_buffers; ++j)
+            {
+                const float * const in = back->get_audio_buffer(back, in_id, j);
+                if (in == NULL)
+                    continue;
+
+                // Mix input buffer contents to output buffer contents
+                for (size_t n=0; n<frames; ++n)
+                    out[n]         += in[n];
+            }
+        }
 
         // Change latency after 2 seconds of processing
         client->num_processed += frames;
@@ -108,7 +143,6 @@ MTEST_BEGIN("pipewire", client)
             if (res == STATUS_OK)
                 client->latency     = new_latency;
         }
-
 
         return STATUS_OK;
     }
@@ -220,7 +254,7 @@ MTEST_BEGIN("pipewire", client)
         port_name = back->port_system_name(back, client.audio_out[1]);
         MTEST_ASSERT((port_name != NULL) && (strcmp(port_name, "PipeWire Manual Test:out_r") == 0));
 
-        sleep(10);
+        sleep(60);
 
         // Disconnect backend
         printf("Disconnecting from PipeWire...\n");

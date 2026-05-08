@@ -70,6 +70,7 @@ namespace lsp
                     {
                         uint32_t            nType;
                         port_data_t        *pHandle;
+                        pw_buffer          *pBuffer;
                         char               *sFullId;
                         char                sID[MAX_PORT_ID_BYTES];
                     } port_t;

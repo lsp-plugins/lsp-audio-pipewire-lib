@@ -64,12 +64,11 @@ MTEST_BEGIN("pipewire", client)
         MTEST_ASSERT_PTR(test, client->audio_out[0] >= 0);
         client->audio_out[1]    = back->register_port(back, "out_r", audio::PORT_AUDIO_OUT);
         MTEST_ASSERT_PTR(test, client->audio_out[1] >= 0);
+        client->midi_out        = back->register_port(back, "midi_out", audio::PORT_MIDI_OUT);
+        MTEST_ASSERT_PTR(test, client->midi_out >= 0);
 
         audio::port_id_t dup_id = back->register_port(back, "out_l", audio::PORT_AUDIO_OUT);
         MTEST_ASSERT_PTR(test, dup_id == -STATUS_ALREADY_EXISTS);
-
-        client->midi_out        = back->register_port(back, "midi_out", audio::PORT_MIDI_OUT);
-        MTEST_ASSERT_PTR(test, client->midi_out >= 0);
 
         return STATUS_OK;
     }
@@ -194,6 +193,25 @@ MTEST_BEGIN("pipewire", client)
             }
         }
 
+        // Dump incoming MIDI events
+        uint32_t index = 0;
+        audio::midi_event_t event;
+        while (back->read_midi_event(back, client->midi_in, &event, &index) == STATUS_OK)
+        {
+            char buf[16];
+            char *dst = buf, *end = &buf[sizeof(buf)/sizeof(buf[0])];
+            *dst = '\0';
+
+            for (size_t i=0, len = lsp_min(event.size, 3u); i<len; ++i)
+            {
+                int count = snprintf(dst, end - dst, (dst == buf) ? "%02x" : " %02x", event.data[i]);
+                dst += count;
+            }
+
+            test->printf("Received MIDI event: time=%d, timestamp=%d, size=%d, data=%s\n",
+                int(client->num_processed + event.timestamp), int(event.timestamp), int(event.size), buf);
+        }
+
         // Change latency after 2 seconds of processing
         client->num_processed += frames;
         if ((client->num_processed >= 2*48000) && (client->latency == 0))
@@ -280,6 +298,8 @@ MTEST_BEGIN("pipewire", client)
         MTEST_ASSERT(client.audio_in[0] >= 0);
         client.audio_in[1]      = back->register_port(back, "in_r", audio::PORT_AUDIO_IN);
         MTEST_ASSERT(client.audio_in[1] >= 0);
+        client.midi_in          = back->register_port(back, "midi_in", audio::PORT_MIDI_IN);
+        MTEST_ASSERT(client.midi_in >= 0);
 
         MTEST_ASSERT(back->port_system_name(back, client.audio_in[0]) == NULL);
         MTEST_ASSERT(back->port_system_name(back, client.audio_in[1]) == NULL);

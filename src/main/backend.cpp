@@ -1132,6 +1132,67 @@ namespace lsp
 
             status_t backend_t::read_midi_event(audio::backend_t *self, port_id_t port_id, midi_event_t *event, uint32_t *index)
             {
+                if ((event == NULL) || (index == NULL))
+                    return STATUS_BAD_ARGUMENTS;
+
+                backend_t * const back  = cast(self);
+                if ((port_id < 0) || (port_id >= back->nPortCapacity))
+                    return STATUS_NO_DATA;
+
+                port_t * const port = &back->vPorts[port_id];
+                if ((port->nType != PORT_MIDI_IN) && (port->nType != PORT_MIDI2_IN))
+                    return STATUS_NO_DATA;
+
+                // Ensure that we have data to return
+                pw_buffer * const buf = port->pBuffer;
+                if ((buf == NULL) || (buf->buffer->n_datas < 1))
+                    return STATUS_NO_DATA;
+
+                // Prepare pointers
+                spa_data * const data       = &buf->buffer->datas[0];
+                uint8_t *src                = static_cast<uint8_t *>(data->data);
+                const uint8_t * end         = &src[data->chunk->size];
+
+                // Check sequence type
+                spa_pod_sequence * const seq= reinterpret_cast<spa_pod_sequence *>(src);
+                if ((src > end) || (seq->pod.type != SPA_TYPE_Sequence) || (seq->pod.size <= sizeof(spa_pod_sequence_body)))
+                    return STATUS_NO_DATA;
+                end                         = lsp_min(end, &src[seq->pod.size + sizeof(spa_pod)]);
+                src                        += sizeof(spa_pod_sequence);
+
+                // Check that we are still in the valid range
+                uint8_t *item               = &src[*index];
+                if (item > end)
+                    return STATUS_OVERFLOW;
+                else if (item == end)
+                    return STATUS_NO_DATA;
+
+                // Fetch new record
+                const uint32_t req_type     = (port->nType == PORT_MIDI_IN) ? SPA_CONTROL_Midi : SPA_CONTROL_UMP;
+                while (true)
+                {
+                    // Get control header
+                    control_header_t * const hdr    = advance_ptr<control_header_t>(item, 1);
+                    spa_pod * const pod             = advance_ptr<spa_pod>(item, 1);
+                    if (item > end)
+                        return STATUS_NO_DATA;
+
+                    // Check that POD contains the desired MIDI event
+                    if (hdr->type == req_type)
+                    {
+                        event->timestamp                = hdr->timestamp;
+                        event->size                     = pod->size;
+                        event->data                     = item;
+
+                        const uint32_t pod_size         = align_size(pod->size, SPA_POD_ALIGN);
+                        *index                          = &item[pod_size] - src;
+                        return STATUS_OK;
+                    }
+                    else
+                        item                           += pod->size;
+                }
+
+
                 return STATUS_NO_DATA;
             }
 
@@ -1152,7 +1213,7 @@ namespace lsp
 
                 // Ensure that we have enough space to place the data
                 spa_data * const data       = &buf->buffer->datas[0];
-                const uint32_t padded_size  = align_size(size, sizeof(uint32_t));
+                const uint32_t padded_size  = align_size(size, SPA_POD_ALIGN);
                 const uint32_t pod_size     =
                     sizeof(control_header_t) +
                     sizeof(spa_pod) +

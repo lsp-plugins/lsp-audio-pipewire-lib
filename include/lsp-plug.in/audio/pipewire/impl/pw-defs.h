@@ -27,6 +27,7 @@
 #include <pipewire/version.h>
 #include <pipewire/keys.h>
 #include <spa/node/io.h>
+#include <spa/pod/pod.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -50,6 +51,10 @@ struct spa_io_async_buffers
 };
 
 #endif /* !PW_CHECK_VERSION */
+
+#ifndef SPA_POD_ALIGN
+    #define SPA_POD_ALIGN               8
+#endif /* SPA_POD_ALIGN */
 
 #ifdef __cplusplus
 }

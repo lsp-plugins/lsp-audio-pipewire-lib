@@ -38,6 +38,7 @@
 #include <lsp-plug.in/stdlib/string.h>
 
 #include <pipewire/thread.h>
+#include <spa/control/control.h>
 #include <spa/node/io.h>
 #include <spa/param/audio/raw.h>
 #include <spa/param/audio/raw-utils.h>
@@ -998,6 +999,17 @@ namespace lsp
                 if (port != NULL)
                     return -STATUS_ALREADY_EXISTS;
 
+                // Determine flags
+                switch (flags & PORT_TYPE_MASK)
+                {
+                    case PORT_TYPE_AUDIO:
+                    case PORT_TYPE_MIDI:
+                    case PORT_TYPE_MIDI2:
+                        break;
+                    default:
+                        return -STATUS_INVALID_VALUE;
+                }
+
                 // Allocate port
                 port                        = back->alloc_port(id, flags);
                 if (port == NULL)
@@ -1131,7 +1143,55 @@ namespace lsp
 
             uint8_t *backend_t::write_midi_event(audio::backend_t *self, port_id_t port_id, uint32_t timestamp, uint32_t size)
             {
-                return NULL;
+                backend_t * const back  = cast(self);
+                if ((port_id < 0) || (port_id >= back->nPortCapacity))
+                    return NULL;
+
+                port_t * const port = &back->vPorts[port_id];
+                if ((port->nType != PORT_MIDI_OUT) && (port->nType != PORT_MIDI2_OUT))
+                    return NULL;
+
+                // Ensure that we have data to return
+                pw_buffer * const buf = port->pBuffer;
+                if ((buf == NULL) || (buf->buffer->n_datas < 1))
+                    return NULL;
+
+                // Ensure that we have enough space to place the data
+                spa_data * const data       = &buf->buffer->datas[0];
+                const uint32_t padded_size  = align_size(size, sizeof(uint32_t));
+                const uint32_t pod_size     =
+                    sizeof(control_header_t) +
+                    sizeof(spa_pod) +
+                    padded_size;
+                const uint32_t new_size     = data->chunk->size + pod_size;
+                if ((new_size + sizeof(spa_pod_sequence)) > data->maxsize)
+                {
+                    lsp_warn("midi port id=%s buffer overflow: too many data", port->sID);
+                    return NULL;
+                }
+
+                // Obtain destination buffer to store data
+                uint8_t *dst            = static_cast<uint8_t *>(data->data);
+                if (dst == NULL)
+                    return NULL;
+                dst                    += data->chunk->size + sizeof(spa_pod_sequence);
+                data->chunk->size       = new_size;
+
+                // Fill event header
+                control_header_t * const hdr    = advance_ptr<control_header_t>(dst, 1);
+                hdr->timestamp          = timestamp;
+                hdr->type               = (port->nType == PORT_MIDI_OUT) ? SPA_CONTROL_Midi : SPA_CONTROL_UMP;
+
+                // Fill pod data
+                spa_pod * const pod     = advance_ptr<spa_pod>(dst, 1);
+                pod->size               = size;
+                pod->type               = SPA_TYPE_Bytes;
+
+                // Pad data with zeros
+                for (; size < padded_size; ++size)
+                    dst[size]               = 0;
+
+                return dst;
             }
 
             // PipeWire Registry callbacks
@@ -1490,7 +1550,7 @@ namespace lsp
                         data->chunk->stride     = sizeof(float);
                         data->chunk->flags      = 0;
                     }
-                    else if (port->nType == PORT_MIDI_OUT)
+                    else if ((port->nType == PORT_MIDI_OUT) || (port->nType == PORT_MIDI2_OUT))
                     {
                         data->chunk->offset     = 0;
                         data->chunk->size       = 0;
@@ -1508,11 +1568,26 @@ namespace lsp
                 for (port_id_t i=0; i<back->nPortCapacity; ++i)
                 {
                     port_t * const port = &back->vPorts[i];
-                    if ((port->nType != PORT_TYPE_FREE) && (port->pBuffer != NULL))
+                    if ((port->nType == PORT_TYPE_FREE) || (port->pBuffer == NULL))
+                        continue;
+
+                    // Fill sequence header if MIDI is used
+                    if ((port->nType == PORT_MIDI_OUT) || (port->nType == PORT_MIDI2_OUT))
                     {
-                        pw_filter_queue_buffer(port->pHandle, port->pBuffer);
-                        port->pBuffer       = NULL;
+                        // Obtain data
+                        spa_data * const data           = &port->pBuffer->buffer->datas[0];
+                        spa_pod_sequence * const seq    = static_cast<spa_pod_sequence *>(data->data);
+
+                        // Fill sequence header and update chunk size
+                        seq->pod.size                   = sizeof(spa_pod_sequence_body) + data->chunk->size;
+                        seq->pod.type                   = SPA_TYPE_Sequence;
+                        seq->body.unit                  = 0;
+                        seq->body.pad                   = 0;
+                        data->chunk->size              += sizeof(spa_pod_sequence);
                     }
+
+                    pw_filter_queue_buffer(port->pHandle, port->pBuffer);
+                    port->pBuffer       = NULL;
                 }
             }
 

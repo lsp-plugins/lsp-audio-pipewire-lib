@@ -42,7 +42,8 @@ namespace lsp
             constexpr const char *BACKEND_MEDIA_ROLE            = "DSP";
 
             constexpr const char *PORT_FORMAT_DSP_AUDIO         = "32 bit float mono audio";
-            constexpr const char *PORT_FORMAT_DSP_MIDI          = "8 bit raw UMP";
+            constexpr const char *PORT_FORMAT_DSP_MIDI          = "8 bit raw midi";
+            constexpr const char *PORT_FORMAT_DSP_MIDI2         = "32 bit raw UMP";
             constexpr const char *PORT_FORMAT_DSP_OTHER         = "other";
 
             constexpr const uint32_t RING_BUFFER_SIZE           = 0x1000;
@@ -71,6 +72,8 @@ namespace lsp
                         return PORT_FORMAT_DSP_AUDIO;
                     case PORT_TYPE_MIDI:
                         return PORT_FORMAT_DSP_MIDI;
+                    case PORT_TYPE_MIDI2:
+                        return PORT_FORMAT_DSP_MIDI2;
                     default:
                         break;
                 }

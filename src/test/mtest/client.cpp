@@ -31,8 +31,13 @@ MTEST_BEGIN("pipewire", client)
         audio::pipewire::backend_t *back;
         audio::port_id_t            audio_in[2];
         audio::port_id_t            audio_out[2];
+        audio::port_id_t            midi_in;
+        audio::port_id_t            midi_out;
         size_t                      latency;
         size_t                      num_processed;
+        size_t                      sample_rate;
+        size_t                      note_time;
+        int32_t                     note;
         bool                        connected;
         bool                        activated;
     };
@@ -43,13 +48,14 @@ MTEST_BEGIN("pipewire", client)
         test_type_t * const test = client->test;
 
         test->printf(
-            "on_connected sample_rate=%d, buffer_size=%d, max_buffer_size=%d\n",
+            "sample_rate=%d, buffer_size=%d, max_buffer_size=%d\n",
             int(params->sample_rate), int(params->buffer_size), int(params->max_buffer_size));
 
         MTEST_ASSERT_PTR(test, !client->connected);
         MTEST_ASSERT_PTR(test, !client->activated);
 
         client->connected       = true;
+        client->sample_rate     = params->sample_rate;
 
         // Register output ports
         audio::pipewire::backend_t * const back = client->back;
@@ -61,6 +67,9 @@ MTEST_BEGIN("pipewire", client)
 
         audio::port_id_t dup_id = back->register_port(back, "out_l", audio::PORT_AUDIO_OUT);
         MTEST_ASSERT_PTR(test, dup_id == -STATUS_ALREADY_EXISTS);
+
+        client->midi_out        = back->register_port(back, "midi_out", audio::PORT_MIDI_OUT);
+        MTEST_ASSERT_PTR(test, client->midi_out >= 0);
 
         return STATUS_OK;
     }
@@ -83,7 +92,13 @@ MTEST_BEGIN("pipewire", client)
     static status_t on_io_changed(void *user_data, const audio::io_parameters_t *params)
     {
         client_t * const client = static_cast<client_t *>(user_data);
-        client->test->printf("on_io_changed\n");
+        test_type_t * const test = client->test;
+
+        test->printf(
+            "sample_rate=%d, buffer_size=%d, max_buffer_size=%d\n",
+            int(params->sample_rate), int(params->buffer_size), int(params->max_buffer_size));
+
+        client->sample_rate     = params->sample_rate;
 
         return STATUS_OK;
     }
@@ -131,6 +146,51 @@ MTEST_BEGIN("pipewire", client)
                 // Mix input buffer contents to output buffer contents
                 for (size_t n=0; n<frames; ++n)
                     out[n]         += in[n];
+            }
+        }
+
+        // Generate note_on and note_off events
+        const size_t period     = client->sample_rate / 2;
+        for (uint32_t i=0; i<frames; ++i)
+        {
+            if (client->note < 0)
+            {
+                // No note emitted
+                if ((client->num_processed + i) % period == 0)
+                {
+                    client->note = 48 + rand() % 24;
+                    client->note_time = client->num_processed + i + client->sample_rate / 32;
+
+                    // Write NOTE ON event
+                    uint8_t * const ev = back->write_midi_event(back, client->midi_out, i, 3);
+                    if (ev != NULL)
+                    {
+                        test->printf("Send NOTE_ON  time=%d, note=%d, frame=%d\n",
+                            int(client->num_processed + i), int(client->note), int(i));
+                        ev[0]   = 0x90;             // Note on: channel = 0
+                        ev[1]   = client->note;     // note
+                        ev[2]   = 0x3f;             // velocity
+                    }
+                }
+            }
+            else
+            {
+                // Note on pending, need to send note-off
+                if ((client->num_processed + i) >= client->note_time)
+                {
+                    // Write NOTE ON event
+                    uint8_t * const ev = back->write_midi_event(back, client->midi_out, i, 3);
+                    if (ev != NULL)
+                    {
+                        test->printf("Send NOTE_OFF time=%d, note=%d, frame=%d\n",
+                            int(client->num_processed + i), int(client->note), int(i));
+                        ev[0]   = 0x80;             // Note off: channel = 0
+                        ev[1]   = client->note;     // note
+                        ev[2]   = 0x3f;             // velocity
+                    }
+
+                    client->note    = -1;       // Reset state
+                }
             }
         }
 
@@ -192,10 +252,15 @@ MTEST_BEGIN("pipewire", client)
         client.back         = NULL;
         client.audio_in[0]  = -1;
         client.audio_in[1]  = -1;
+        client.midi_in      = -1;
         client.audio_out[0] = -1;
         client.audio_out[1] = -1;
+        client.midi_out     = -1;
         client.latency      = 0;
         client.num_processed= 0;
+        client.sample_rate  = 0;
+        client.note_time    = 0;
+        client.note         = -1;
         client.connected    = false;
         client.activated    = false;
 

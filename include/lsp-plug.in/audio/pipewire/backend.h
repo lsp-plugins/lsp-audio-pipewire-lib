@@ -80,6 +80,12 @@ namespace lsp
                         port_id_t           nPortId;
                     } port_data_t;
 
+                    typedef struct control_header_t
+                    {
+                        uint32_t            timestamp;
+                        uint32_t            type;
+                    } control_header_t;
+
                     typedef memmap<spa_io_position>     mm_io_position;
                     typedef memmap<spa_io_clock>        mm_io_clock;
 

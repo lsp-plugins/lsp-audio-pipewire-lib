@@ -183,7 +183,6 @@ namespace lsp
                 AUDIO_PIPEWIRE_BACKEND_EXP(audio_buffers_count);
                 AUDIO_PIPEWIRE_BACKEND_EXP(get_audio_buffer);
 
-                AUDIO_PIPEWIRE_BACKEND_EXP(midi_events_count);
                 AUDIO_PIPEWIRE_BACKEND_EXP(read_midi_event);
                 AUDIO_PIPEWIRE_BACKEND_EXP(write_midi_event);
 
@@ -1131,12 +1130,7 @@ namespace lsp
                 return static_cast<float *>(buf->buffer->datas[index].data);
             }
 
-            size_t backend_t::midi_events_count(audio::backend_t *self, port_id_t port_id)
-            {
-                return 0;
-            }
-
-            status_t backend_t::read_midi_event(audio::backend_t *self, port_id_t port_id, midi_event_t *event, uint32_t index)
+            status_t backend_t::read_midi_event(audio::backend_t *self, port_id_t port_id, midi_event_t *event, uint32_t *index)
             {
                 return STATUS_NO_DATA;
             }

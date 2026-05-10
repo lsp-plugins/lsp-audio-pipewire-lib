@@ -29,8 +29,6 @@
 #include <lsp-plug.in/audio/pipewire/messages.h>
 #include <lsp-plug.in/audio/pipewire/pod.h>
 #include <lsp-plug.in/audio/pipewire/impl/cast.h>
-#include <lsp-plug.in/audio/pipewire/impl/memmap.h>
-#include <lsp-plug.in/audio/pipewire/impl/mutex.h>
 #include <lsp-plug.in/audio/pipewire/impl/pw-defs.h>
 
 #include <lsp-plug.in/stdlib/stdio.h>
@@ -143,7 +141,6 @@ namespace lsp
             {
                 sClientName                     = NULL;
                 sServerName                     = NULL;
-                pMutex                          = NULL;
                 pAudioDataLoop                  = NULL;
                 pContextThreadLoop              = NULL;
                 pAudioLoop                      = NULL;
@@ -256,11 +253,6 @@ namespace lsp
                         return STATUS_NO_MEM;
                     }
                 }
-
-                // Create mutex
-                pMutex              = mutex_create();
-                if (pMutex == NULL)
-                    return STATUS_NO_MEM;
 
                 // Create context properties
                 res = sClientDict.put(
@@ -567,12 +559,6 @@ namespace lsp
                     pw_thread_loop_destroy(pContextThreadLoop);
                     pContextThreadLoop = NULL;
                     pContextLoop = NULL;
-                }
-
-                if (pMutex != NULL)
-                {
-                    mutex_destroy(pMutex);
-                    pMutex      = NULL;
                 }
 
                 if (sServerName != NULL)
@@ -1388,8 +1374,6 @@ namespace lsp
                     lsp_trace("Related properties:\n%s\n", dict.to_string());
             #endif /* LSP_TRACE */
 
-                MUTEX_SCOPED_LOCK(back->pMutex);
-
                 // Check that we need to synchronize node name
                 bool sync_node_name = false;
                 if (strcmp(type, PW_TYPE_INTERFACE_Node) == 0)
@@ -1469,8 +1453,6 @@ namespace lsp
             {
                 lsp_trace("self=%p, id=%d\n", self, int(id));
                 backend_t * const back      = cast(self);
-
-                MUTEX_SCOPED_LOCK(back->pMutex);
 
                 status_t res = back->sRegistry.process_remove(id);
                 if (res != STATUS_OK)

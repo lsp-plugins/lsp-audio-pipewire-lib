@@ -26,9 +26,6 @@
 
 #include <lsp-plug.in/audio/iface/backend.h>
 #include <lsp-plug.in/audio/pipewire/dictionary.h>
-#include <lsp-plug.in/audio/pipewire/memmap.h>
-#include <lsp-plug.in/audio/pipewire/mutex.h>
-#include <lsp-plug.in/audio/pipewire/port_map.h>
 #include <lsp-plug.in/audio/pipewire/registry.h>
 #include <lsp-plug.in/audio/pipewire/ringbuffer.h>
 
@@ -89,9 +86,6 @@ namespace lsp
                         uint32_t            type;
                     } control_header_t;
 
-                    typedef memmap<spa_io_position>     mm_io_position;
-                    typedef memmap<spa_io_clock>        mm_io_clock;
-
                 protected:
                     static const pw_registry_events         registry_events;
                     static const pw_core_events             core_events;
@@ -104,7 +98,6 @@ namespace lsp
                 public:
                     char               *sClientName;
                     char               *sServerName;
-                    mutex_t            *pMutex;
                     pw_data_loop       *pAudioDataLoop;
                     pw_thread_loop     *pContextThreadLoop;
                     pw_loop            *pAudioLoop;

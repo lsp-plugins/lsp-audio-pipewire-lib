@@ -33,6 +33,10 @@
 extern "C" {
 #endif /* __cplusplus */
 
+#if (PW_VERSION_CORE >= 4) && (PW_VERSION_CORE_EVENTS >= 1)
+    #define PIPEWIRE_CORE_HAS_BOUND_PROPS
+#endif /* PIPEWIRE_CORE_HAS_BOUND_PROPS */
+
 #ifndef SPA_KEY_THREAD_RESET_ON_FORK
     #define SPA_KEY_THREAD_RESET_ON_FORK    "thread.reset-on-fork"  /* reset priority and policy for real-time threads on fork. Default true */
 #endif /* SPA_KEY_THREAD_RESET_ON_FORK */

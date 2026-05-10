@@ -113,6 +113,20 @@ namespace lsp
                 return flags;
             }
 
+            static int find_spa_json_object(spa_json *iter, const char *key, const char **value)
+            {
+                spa_json obj = SPA_JSON_SAVE(iter);
+                int res, len = strlen(key) + 3;
+                char * k = static_cast<char *>(alloca(len));
+                if (!k)
+                    return -ENOMEM;
+
+                while ((res = spa_json_object_next(&obj, k, len, value)) > 0)
+                    if (spa_streq(k, key))
+                        return res;
+                return -ENOENT;
+            }
+
             static char * fetch_spa_string(const char *value, const char *key)
             {
                 if ((value == NULL) || (key == NULL))
@@ -124,7 +138,7 @@ namespace lsp
                     return NULL;
 
                 const char *v = NULL;
-                const int length = spa_json_object_find(&iter, key, &v);
+                const int length = find_spa_json_object(&iter, key, &v);
                 if (length < 0)
                     return NULL;
 

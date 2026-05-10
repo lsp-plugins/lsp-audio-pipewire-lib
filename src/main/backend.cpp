@@ -42,7 +42,6 @@
 #include <spa/param/audio/raw-utils.h>
 #include <spa/param/latency-utils.h>
 #include <spa/support/thread.h>
-#include <spa/utils/json.h>
 
 #include <errno.h>
 
@@ -60,15 +59,15 @@ namespace lsp
                 .version = PW_VERSION_CORE_EVENTS,
                 .info = on_core_info,
                 .done = on_core_done,
-                .ping = NULL, // on_core_ping,
+                .ping = NULL,
                 .error = on_core_error,
-                .remove_id = NULL, // on_core_remove_id,
-                .bound_id = NULL, // on_core_bound_id,
-                .add_mem = NULL, // on_core_add_mem,
-                .remove_mem = NULL, // on_core_remove_mem,
-            #ifdef PIPEWIRE_HAS_BOUND_PROPS
-                .bound_props = NULL, // on_core_bound_props,
-            #endif /* PIPEWIRE_HAS_BOUND_PROPS */
+                .remove_id = NULL,
+                .bound_id = NULL,
+                .add_mem = NULL,
+                .remove_mem = NULL,
+            #ifdef PIPEWIRE_CORE_HAS_BOUND_PROPS
+                .bound_props = NULL,
+            #endif /* PIPEWIRE_CORE_HAS_BOUND_PROPS */
             };
 
             // PipeWire registry events
@@ -88,10 +87,10 @@ namespace lsp
                 .state_changed      = on_filter_state_changed,
                 .io_changed         = on_filter_io_changed,
                 .param_changed      = on_filter_param_changed,
-                .add_buffer         = on_filter_add_buffer,
-                .remove_buffer      = on_filter_remove_buffer,
+                .add_buffer         = NULL,
+                .remove_buffer      = NULL,
                 .process            = on_filter_process,
-                .drained            = on_filter_drained,
+                .drained            = NULL,
                 .command            = on_filter_command,
             };
 
@@ -1494,54 +1493,11 @@ namespace lsp
                     pw_thread_loop_signal(back->pContextThreadLoop, false);
             }
 
-            void backend_t::on_core_ping(void *self, uint32_t id, int seq)
-            {
-                lsp_trace("self=%p, id=%d, seq=%d", self, int(id), int(seq));
-                backend_t * const back = cast(self);
-                if (back->pCore != NULL)
-                    pw_core_pong(back->pCore, id, seq);
-            }
-
             void backend_t::on_core_error(void *self, uint32_t id, int seq, int res, const char *message)
             {
                 lsp_trace("self=%p, id=%d, seq=%d, res=%d, message='%s'",
                     self, int(id), int(seq), int(res), message);
             }
-
-            void backend_t::on_core_remove_id(void *self, uint32_t id)
-            {
-                lsp_trace("self=%p, id=%d", self, int(id));
-            }
-
-            void backend_t::on_core_bound_id(void *self, uint32_t id, uint32_t global_id)
-            {
-                lsp_trace("self=%p, id=%d, global_id=%d", self, int(id), int(global_id));
-            }
-
-            void backend_t::on_core_add_mem(void *self, uint32_t id, uint32_t type, int fd, uint32_t flags)
-            {
-                lsp_trace("self=%p, id=%d, type=%d, fd=%d, flags=0x%x",
-                    self, int(id), int(type), fd, int(flags));
-            }
-
-            void backend_t::on_core_remove_mem(void *self, uint32_t id)
-            {
-                lsp_trace("self=%p, id=%d", self, int(id));
-            }
-
-        #ifdef PIPEWIRE_HAS_BOUND_PROPS
-            void backend_t::on_core_bound_props(void *self, uint32_t id, uint32_t global_id, const struct spa_dict *props)
-            {
-                lsp_trace("self=%p, id=%d, global_id=%d, props=%p",
-                    self, int(id), int(global_id), props);
-
-        #ifdef LSP_TRACE
-            dictionary dict;
-            if ((props) && (dict.set(props) == STATUS_OK))
-                lsp_trace("Core bound properties:\n%s\n", dict.to_string());
-        #endif /* LSP_TRACE */
-            }
-        #endif /* PIPEWIRE_HAS_BOUND_PROPS */
 
             void backend_t::on_metadata_destroy(void *data)
             {
@@ -1717,18 +1673,6 @@ namespace lsp
                 }
             }
 
-            void backend_t::on_filter_add_buffer(void *self, void *port_data, struct pw_buffer *buffer)
-            {
-                lsp_trace("self=%p, port_data=%p, buffer=%p", self, port_data, buffer);
-                lsp_trace("debug");
-            }
-
-            void backend_t::on_filter_remove_buffer(void *self, void *port_data, struct pw_buffer *buffer)
-            {
-                lsp_trace("self=%p, port_data=%p, buffer=%p", self, port_data, buffer);
-                lsp_trace("debug");
-            }
-
             void backend_t::on_filter_process(void *self, struct spa_io_position *position)
             {
                 backend_t * const back  = cast(self);
@@ -1801,12 +1745,6 @@ namespace lsp
                 }
             }
 
-            void backend_t::on_filter_drained(void *self)
-            {
-                lsp_trace("self=%p", self);
-                lsp_trace("debug");
-            }
-
             void backend_t::on_filter_command(void *self, const struct spa_command *command)
             {
                 lsp_trace("self = %p, command=%d (%s)",
@@ -1819,7 +1757,6 @@ namespace lsp
                     lsp_trace("Node command: id=%d (%s)",
                         int(command->body.body.id),
                         decode_spa_node_command(command->body.body.id));
-
                 }
                 lsp_trace("debug");
             }

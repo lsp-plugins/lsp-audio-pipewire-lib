@@ -35,10 +35,6 @@
 #include <spa/param/latency.h>
 #include <spa/utils/ringbuffer.h>
 
-#if (PW_VERSION_CORE >= 4) && (PW_VERSION_CORE_EVENTS >= 1)
-    #define PIPEWIRE_HAS_BOUND_PROPS
-#endif /* PIPEWIRE_HAS_BOUND_PROPS */
-
 namespace lsp
 {
     namespace audio
@@ -146,25 +142,14 @@ namespace lsp
                     // PipeWire core events
                     static void         on_core_info(void *self, const struct pw_core_info *info);
                     static void         on_core_done(void *self, uint32_t id, int seq);
-                    static void         on_core_ping(void *self, uint32_t id, int seq);
                     static void         on_core_error(void *self, uint32_t id, int seq, int res, const char *message);
-                    static void         on_core_remove_id(void *self, uint32_t id);
-                    static void         on_core_bound_id(void *self, uint32_t id, uint32_t global_id);
-                    static void         on_core_add_mem(void *self, uint32_t id, uint32_t type, int fd, uint32_t flags);
-                    static void         on_core_remove_mem(void *self, uint32_t id);
-                #ifdef PIPEWIRE_HAS_BOUND_PROPS
-                    static void         on_core_bound_props(void *self, uint32_t id, uint32_t global_id, const struct spa_dict *props);
-                #endif /* PIPEWIRE_HAS_BOUND_PROPS */
 
                 protected:
                     static void         on_filter_destroy(void *self);
                     static void         on_filter_state_changed(void *self, enum pw_filter_state old, enum pw_filter_state state, const char *error);
                     static void         on_filter_io_changed(void *self, void *port_data, uint32_t id, void *area, uint32_t size);
                     static void         on_filter_param_changed(void *self, void *port_data, uint32_t id, const struct spa_pod *param);
-                    static void         on_filter_add_buffer(void *self, void *port_data, struct pw_buffer *buffer);
-                    static void         on_filter_remove_buffer(void *self, void *port_data, struct pw_buffer *buffer);
                     static void         on_filter_process(void *self, struct spa_io_position *position);
-                    static void         on_filter_drained(void *self);
                     static void         on_filter_command(void *self, const struct spa_command *command);
 
                 protected:

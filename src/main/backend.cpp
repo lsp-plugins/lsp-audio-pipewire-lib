@@ -44,6 +44,7 @@
 #include <spa/param/audio/raw-utils.h>
 #include <spa/param/latency-utils.h>
 #include <spa/support/thread.h>
+#include <spa/utils/json.h>
 
 #include <errno.h>
 

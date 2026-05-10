@@ -190,7 +190,7 @@ namespace lsp
 
                 protected:
                     // PipeWire link proxy events
-                    static void         on_link_error(void *code, int seq, int res, const char *message);
+                    static void         on_link_error(void *data, int seq, int res, const char *message);
 
                 protected:
                     // PipeWire notification source

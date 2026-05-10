@@ -102,13 +102,15 @@ namespace lsp
                     status_t        process_remove(uint32_t id) noexcept;
 
                 public:
-                    const node_t   *find_node_by_id(uint32_t id) const;
-                    const node_t   *find_node_by_name(const char *name) const;
-                    const node_t   *find_node_by_nick(const char *name) const;
-                    const node_t   *find_node_by_string(const char *name) const;
-                    const node_t   *find_node_by_uid(const char *uid) const;
-                    const port_t   *find_node_port(uint32_t node_id, const char *port_id, uint32_t direction);
-                    const port_t   *find_port(const char *port_id, uint32_t direction);
+                    const node_t   *find_node_by_id(uint32_t id) const noexcept;
+                    const node_t   *find_node_by_name(const char *name) const noexcept;
+                    const node_t   *find_node_by_nick(const char *name) const noexcept;
+                    const node_t   *find_node_by_string(const char *name) const noexcept;
+                    const node_t   *find_node_by_uid(const char *uid) const noexcept;
+                    const port_t   *find_node_port(uint32_t node_id, const char *port_id, uint32_t direction) const noexcept;
+                    const port_t   *find_port(const char *port_id, uint32_t direction) const noexcept;
+                    const link_t   *find_link(const port_t *src, const port_t *dst) const noexcept;
+                    const link_t   *find_link(uint32_t src_node_id, uint32_t src_port_id, uint32_t dst_node_id, uint32_t dst_port_id) const noexcept;
             };
         } /* namespace pipewire */
     }  /* namespace audio */

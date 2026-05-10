@@ -619,10 +619,10 @@ namespace lsp
                     port_t * const out_port     = find_by_id<port_t>(vPorts, link->nOutPortID);
                     lsp_trace("Registered link id=%d, %s (id=%d):%s (id=%d) -> %s (id=%d):%s (id=%d)",
                         int(link->nID),
-                        (in_node != NULL) ? in_node->sName : "<null>", int(link->nInNodeID),
-                        (in_port != NULL) ? in_port->sName : "<null>", int(link->nInPortID),
                         (out_node != NULL) ? out_node->sName : "<null>", int(link->nOutNodeID),
-                        (out_port != NULL) ? out_port->sName : "<null>", int(link->nOutPortID));
+                        (out_port != NULL) ? out_port->sName : "<null>", int(link->nOutPortID),
+                        (in_node != NULL) ? in_node->sName : "<null>", int(link->nInNodeID),
+                        (in_port != NULL) ? in_port->sName : "<null>", int(link->nInPortID));
                 #endif /* LSP_TRACE */
                     link = NULL;
                 }
@@ -696,10 +696,10 @@ namespace lsp
                     port_t * const out_port     = find_by_id<port_t>(vPorts, link->nOutPortID);
                     lsp_trace("Removed link id=%d, %s (id=%d):%s (id=%d) -> %s (id=%d):%s (id=%d)",
                         int(link->nID),
-                        (in_node != NULL) ? in_node->sName : "<null>", int(link->nInNodeID),
-                        (in_port != NULL) ? in_port->sName : "<null>", int(link->nInPortID),
                         (out_node != NULL) ? out_node->sName : "<null>", int(link->nOutNodeID),
-                        (out_port != NULL) ? out_port->sName : "<null>", int(link->nOutPortID));
+                        (out_port != NULL) ? out_port->sName : "<null>", int(link->nOutPortID),
+                        (in_node != NULL) ? in_node->sName : "<null>", int(link->nInNodeID),
+                        (in_port != NULL) ? in_port->sName : "<null>", int(link->nInPortID));
                 #endif /* LSP_TRACE */
                     destroy(link);
                     return STATUS_OK;
@@ -708,13 +708,13 @@ namespace lsp
                 return STATUS_NOT_FOUND;
             }
 
-            const node_t *registry::find_node_by_id(uint32_t id) const
+            const node_t *registry::find_node_by_id(uint32_t id) const noexcept
             {
                 registry * const self = const_cast<registry *>(this);
                 return find_by_id<node_t>(self->vNodes, id);
             }
 
-            const node_t *registry::find_node_by_name(const char *name) const
+            const node_t *registry::find_node_by_name(const char *name) const noexcept
             {
                 for (size_t i=0, n=vNodes.nCount; i<n; ++i)
                 {
@@ -725,7 +725,7 @@ namespace lsp
                 return NULL;
             }
 
-            const node_t *registry::find_node_by_uid(const char *uid) const
+            const node_t *registry::find_node_by_uid(const char *uid) const noexcept
             {
                 for (size_t i=0, n=vNodes.nCount; i<n; ++i)
                 {
@@ -736,7 +736,7 @@ namespace lsp
                 return NULL;
             }
 
-            const node_t *registry::find_node_by_nick(const char *name) const
+            const node_t *registry::find_node_by_nick(const char *name) const noexcept
             {
                 for (size_t i=0, n=vNodes.nCount; i<n; ++i)
                 {
@@ -747,7 +747,7 @@ namespace lsp
                 return NULL;
             }
 
-            const node_t *registry::find_node_by_string(const char *name) const
+            const node_t *registry::find_node_by_string(const char *name) const noexcept
             {
                 const node_t * node = find_node_by_uid(name);
                 if (node != NULL)
@@ -758,7 +758,7 @@ namespace lsp
                 return find_node_by_nick(name);
             }
 
-            const port_t *registry::find_node_port(uint32_t node_id, const char *port_id, uint32_t direction)
+            const port_t *registry::find_node_port(uint32_t node_id, const char *port_id, uint32_t direction) const noexcept
             {
                 // Lookup by port name first
                 for (size_t i=0, n=vPorts.nCount; i<n; ++i)
@@ -786,7 +786,7 @@ namespace lsp
                 return NULL;
             }
 
-            const port_t *registry::find_port(const char *port_id, uint32_t direction)
+            const port_t *registry::find_port(const char *port_id, uint32_t direction) const noexcept
             {
                 // Find the port name separator character
                 const char * const sep = strrchr(const_cast<char *>(port_id), ':');
@@ -815,6 +815,29 @@ namespace lsp
                 // Lookup the node
                 const node_t * const node   = find_node_by_string(lookup_id);
                 return (node != NULL) ? find_node_port(node->nID, port_name, direction) : NULL;
+            }
+
+            const link_t *registry::find_link(const port_t *src, const port_t *dst) const noexcept
+            {
+                if ((src == NULL) || (dst == NULL))
+                    return NULL;
+                return find_link(src->nNodeID, src->nID, dst->nNodeID, dst->nID);
+            }
+
+            const link_t *registry::find_link(uint32_t src_node_id, uint32_t src_port_id, uint32_t dst_node_id, uint32_t dst_port_id) const noexcept
+            {
+                // Lookup by port name first
+                for (size_t i=0, n=vLinks.nCount; i<n; ++i)
+                {
+                    const link_t * const link = static_cast<const link_t *>(vLinks.vObjects[i]);
+                    if ((link->nOutNodeID == src_node_id) &&
+                        (link->nOutPortID == src_port_id) &&
+                        (link->nInNodeID == dst_node_id) &&
+                        (link->nInPortID == dst_port_id))
+                        return link;
+                }
+
+                return NULL;
             }
 
         } /* namespace pipewire */

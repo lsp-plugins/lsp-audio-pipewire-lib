@@ -1184,17 +1184,38 @@ namespace lsp
                 int link_res = 0;
 
                 pw_proxy_add_listener(proxy, &listener, &link_proxy_events, &link_res);
-                if ((res = back->sync_core(false)) != STATUS_OK)
-                    return res;
+                int error = back->sync_core(false);
                 spa_hook_remove(&listener);
                 pw_proxy_destroy(proxy);
 
-                return (link_res < 0) ? STATUS_UNKNOWN_ERR : STATUS_OK;
+                return ((error < 0) || (link_res < 0)) ? STATUS_UNKNOWN_ERR : STATUS_OK;
             }
 
             status_t backend_t::disconnect_ports(audio::backend_t *self, const char *source, const char *destination)
             {
-                return STATUS_NOT_IMPLEMENTED;
+                if ((source == NULL) || (destination == NULL))
+                    return STATUS_BAD_ARGUMENTS;
+
+                backend_t * const back      = cast(self);
+                pw_thread_loop_lock(back->pContextThreadLoop);
+                lsp_finally { pw_thread_loop_unlock(back->pContextThreadLoop); };
+
+                // Find source and destination port and their matches
+                const pipewire::port_t * const src  = back->sRegistry.find_port(source, PORT_DIR_OUT);
+                if (src == NULL)
+                    return STATUS_NOT_FOUND;
+                const pipewire::port_t * const dst  = back->sRegistry.find_port(destination, PORT_DIR_IN);
+                if (dst == NULL)
+                    return STATUS_NOT_FOUND;
+                if ((src->nFlags & PORT_TYPE_MASK) != (dst->nFlags & PORT_TYPE_MASK))
+                    return STATUS_BAD_TYPE;
+
+                const link_t * link = back->sRegistry.find_link(src, dst);
+                if (link == NULL)
+                    return STATUS_NOT_FOUND;
+
+                pw_registry_destroy(back->pRegistry, link->nID);
+                return back->sync_core(false);
             }
 
             size_t backend_t::audio_buffers_count(audio::backend_t *self, port_id_t port_id)
@@ -1825,9 +1846,9 @@ namespace lsp
                 lsp_trace("self = %p", self);
             }
 
-            void backend_t::on_link_error(void *code, int seq, int res, const char *message)
+            void backend_t::on_link_error(void *data, int seq, int res, const char *message)
             {
-                int *link_res = static_cast<int *>(code);
+                int *link_res = static_cast<int *>(data);
                 *link_res = res;
             }
 

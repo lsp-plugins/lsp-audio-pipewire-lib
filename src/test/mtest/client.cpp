@@ -108,7 +108,7 @@ MTEST_BEGIN("pipewire", client)
         test_type_t * const test = client->test;
         audio::pipewire::backend_t * const back = client->back;
 
-        test->printf("on_process\n");
+//        test->printf("on_process\n");
 
         MTEST_ASSERT_PTR(test, client->activated);
         MTEST_ASSERT_PTR(test, client->connected);
@@ -265,7 +265,6 @@ MTEST_BEGIN("pipewire", client)
         using namespace audio;
 
         // Init client
-        status_t res;
         client_t client;
         client.test         = this;
         client.back         = NULL;
@@ -341,10 +340,14 @@ MTEST_BEGIN("pipewire", client)
         MTEST_ASSERT((port_name != NULL) && (strcmp(port_name, "PipeWire Manual Test:out_r") == 0));
 
         // Connect ports
+        status_t res;
         res = back->connect_ports(back, back->port_system_name(back, client.audio_out[0]), "system:playback_1");
         printf("Connect %s -> %s = %d", back->port_system_name(back, client.audio_out[0]), "system:playback_1", int(res));
         res = back->connect_ports(back, back->port_system_name(back, client.audio_out[1]), "system:playback_2");
         printf("Connect %s -> %s = %d", back->port_system_name(back, client.audio_out[1]), "system:playback_2", int(res));
+
+        res = back->disconnect_ports(back, back->port_system_name(back, client.audio_out[0]), "system:playback_1");
+        printf("Disconnect %s -> %s = %d", back->port_system_name(back, client.audio_out[0]), "system:playback_1", int(res));
 
         sleep(60);
 

@@ -107,6 +107,21 @@ namespace lsp
                 .drop_rt            = on_thread_drop_rt,
             };
 
+            const pw_proxy_events backend_t::metadata_proxy_events = {
+                PW_VERSION_PROXY_EVENTS,
+                .destroy            = on_metadata_destroy,
+                .bound              = NULL,
+                .removed            = on_metadata_removed,
+                .done               = NULL,
+                .error              = NULL,
+                .bound_props        = NULL
+            };
+
+            const pw_metadata_events backend_t::metadata_events = {
+                PW_VERSION_METADATA_EVENTS,
+                .property           = on_metadata_property
+            };
+
             // Backend implementation
             backend_t::backend_t() noexcept
             {
@@ -127,6 +142,7 @@ namespace lsp
                 pMemPool                        = NULL;
                 pRegistry                       = NULL;
                 pFilter                         = NULL;
+                pMetadata                       = NULL;
                 pOldThreadUtils                 = NULL;
 
                 sRegistry.construct();
@@ -486,6 +502,15 @@ namespace lsp
                     {
                         pw_thread_loop_lock(pContextThreadLoop);
                         lsp_finally { pw_thread_loop_unlock(pContextThreadLoop); };
+
+                        // Destroy metadata
+                        if (pMetadata != NULL)
+                        {
+                            spa_hook_remove(&vHooks[HOOK_METADATA_PROXY]);
+                            spa_hook_remove(&vHooks[HOOK_METADATA]);
+                            pw_proxy_destroy(to_pw_proxy(pMetadata));
+                            pMetadata   = NULL;
+                        }
 
                         // Destroy node
                         if (pFilter != NULL)
@@ -940,16 +965,21 @@ namespace lsp
             status_t backend_t::register_ports() noexcept
             {
                 // Register all ports
-                status_t res;
-                for (port_id_t i=0, n=nPortCapacity; i<n; ++i)
                 {
-                    port_t * const port     = &vPorts[i];
-                    if (port->nType == PORT_TYPE_FREE)
-                        continue;
+                    pw_thread_loop_lock(pContextThreadLoop);
+                    lsp_finally { pw_thread_loop_unlock(pContextThreadLoop); };
 
-                    res                     = register_port(port);
-                    if (res != STATUS_OK)
-                        return res;
+                    status_t res;
+                    for (port_id_t i=0, n=nPortCapacity; i<n; ++i)
+                    {
+                        port_t * const port     = &vPorts[i];
+                        if (port->nType == PORT_TYPE_FREE)
+                            continue;
+
+                        res                     = register_port(port);
+                        if (res != STATUS_OK)
+                            return res;
+                    }
                 }
 
                 // Synchronize
@@ -1018,13 +1048,16 @@ namespace lsp
                 // Need to immediately register port (connected)?
                 if (back->pFilter != NULL)
                 {
+                    pw_thread_loop_lock(back->pContextThreadLoop);
+                    lsp_finally { pw_thread_loop_unlock(back->pContextThreadLoop); };
+
                     // Register port
                     status_t res                = back->register_port(port);
                     if (res != STATUS_OK)
                         return -res;
 
                     // Synchronize client
-                    int error   = back->sync_core(true);
+                    int error   = back->sync_core(false);
                     if (error < 0)
                     {
                         back->unregister_port(port);
@@ -1274,6 +1307,32 @@ namespace lsp
                     if ((back->pFilter != NULL) && (id == pw_filter_get_node_id(back->pFilter)))
                         sync_node_name  = back->sRegistry.find_node_by_name(back->sClientName) != NULL;
                 }
+                else if (strcmp(type, PW_TYPE_INTERFACE_Metadata) == 0)
+                {
+                    const char *metadata_name = spa_dict_lookup(props, PW_KEY_METADATA_NAME);
+                    if (metadata_name == NULL)
+                        return;
+
+                    if ((strcmp(metadata_name, "default") == 0) && (back->pMetadata == NULL))
+                    {
+                        back->pMetadata = static_cast<pw_metadata *>(
+                            pw_registry_bind(
+                                back->pRegistry,
+                                id, type, PW_VERSION_METADATA, 0));
+
+                        if (back->pMetadata == NULL)
+                            return;
+
+                        pw_proxy_add_listener(
+                            to_pw_proxy(back->pMetadata),
+                            &back->vHooks[HOOK_METADATA_PROXY],
+                            &metadata_proxy_events, back);
+                        pw_metadata_add_listener(
+                            back->pMetadata,
+                            &back->vHooks[HOOK_METADATA],
+                            &metadata_events, back);
+                    }
+                }
 
                 const status_t res = back->sRegistry.process_add(id, permissions, type, version, props);
                 if (res == STATUS_OK)
@@ -1411,6 +1470,30 @@ namespace lsp
         #endif /* LSP_TRACE */
             }
         #endif /* PIPEWIRE_HAS_BOUND_PROPS */
+
+            void backend_t::on_metadata_destroy(void *data)
+            {
+                backend_t * const back  = cast(data);
+                pw_proxy_destroy(to_pw_proxy(back->pMetadata));
+                back->pMetadata         = NULL;
+            }
+
+            void backend_t::on_metadata_removed(void *data)
+            {
+                backend_t * const back  = cast(data);
+                if (back->pMetadata != NULL)
+                {
+                    spa_hook_remove(&back->vHooks[HOOK_METADATA_PROXY]);
+                    spa_hook_remove(&back->vHooks[HOOK_METADATA]);
+                }
+            }
+
+            int backend_t::on_metadata_property(void *data, uint32_t subject, const char *key, const char *type, const char *value)
+            {
+                backend_t * const back  = cast(data);
+                back->sRegistry.process_metadata(subject, key, type, value);
+                return 0;
+            }
 
             spa_thread *backend_t::on_thread_create(void *self, const spa_dict *props, void *(*start)(void*), void *arg)
             {

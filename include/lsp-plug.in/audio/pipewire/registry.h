@@ -27,6 +27,7 @@
 #include <lsp-plug.in/audio/pipewire/registry_types.h>
 #include <lsp-plug.in/common/status.h>
 
+#include <pipewire/core.h>
 #include <spa/utils/dict.h>
 
 namespace lsp
@@ -49,6 +50,8 @@ namespace lsp
                     } storage_t;
 
                 protected:
+                    char           *sDefaultSource;
+                    char           *sDefaultSink;
                     storage_t       vClients;
                     storage_t       vNodes;
                     storage_t       vPorts;
@@ -95,12 +98,17 @@ namespace lsp
 
                 public: // PipeWire management interface
                     status_t        process_add(uint32_t id, uint32_t permissions, const char *type, uint32_t version, const spa_dict *props) noexcept;
+                    status_t        process_metadata(uint32_t id, const char *key, const char *type, const char *value) noexcept;
                     status_t        process_remove(uint32_t id) noexcept;
 
                 public:
                     const node_t   *find_node_by_id(uint32_t id) const;
                     const node_t   *find_node_by_name(const char *name) const;
+                    const node_t   *find_node_by_nick(const char *name) const;
+                    const node_t   *find_node_by_string(const char *name) const;
                     const node_t   *find_node_by_uid(const char *uid) const;
+                    const port_t   *find_node_port(uint32_t node_id, const char *port_id, uint32_t direction);
+                    const port_t   *find_port(const char *port_id, uint32_t direction);
             };
         } /* namespace pipewire */
     }  /* namespace audio */

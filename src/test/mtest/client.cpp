@@ -265,6 +265,7 @@ MTEST_BEGIN("pipewire", client)
         using namespace audio;
 
         // Init client
+        status_t res;
         client_t client;
         client.test         = this;
         client.back         = NULL;
@@ -338,6 +339,12 @@ MTEST_BEGIN("pipewire", client)
         MTEST_ASSERT((port_name != NULL) && (strcmp(port_name, "PipeWire Manual Test:out_l") == 0));
         port_name = back->port_system_name(back, client.audio_out[1]);
         MTEST_ASSERT((port_name != NULL) && (strcmp(port_name, "PipeWire Manual Test:out_r") == 0));
+
+        // Connect ports
+        res = back->connect_ports(back, back->port_system_name(back, client.audio_out[0]), "system:playback_1");
+        printf("Connect %s -> %s = %d", back->port_system_name(back, client.audio_out[0]), "system:playback_1", int(res));
+        res = back->connect_ports(back, back->port_system_name(back, client.audio_out[1]), "system:playback_2");
+        printf("Connect %s -> %s = %d", back->port_system_name(back, client.audio_out[1]), "system:playback_2", int(res));
 
         sleep(60);
 

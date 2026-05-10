@@ -23,6 +23,7 @@
 
 #include <lsp-plug.in/audio/iface/types.h>
 #include <lsp-plug.in/audio/pipewire/impl/cast.h>
+#include <lsp-plug.in/audio/pipewire/impl/pw-defs.h>
 #include <lsp-plug.in/common/alloc.h>
 #include <lsp-plug.in/common/debug.h>
 #include <lsp-plug.in/stdlib/stdio.h>
@@ -33,6 +34,7 @@
 #include <pipewire/link.h>
 #include <pipewire/node.h>
 #include <pipewire/port.h>
+#include <spa/utils/json.h>
 
 namespace lsp
 {
@@ -67,6 +69,15 @@ namespace lsp
                 return res;
             }
 
+            static bool fetch_pw_bool(const spa_dict * dict, const char *key, bool dfl = false)
+            {
+                const char *value = spa_dict_lookup(dict, key);
+                if ((value == NULL) || (value[0] == '\0'))
+                    return dfl;
+
+                return strcmp(value, "true") == 0;
+            }
+
             static uint32_t fetch_port_flags(const spa_dict * dict, uint32_t dfl = PORT_TYPE_UNKNOWN)
             {
                 uint32_t flags      = 0;
@@ -89,11 +100,47 @@ namespace lsp
                 else if (strcmp(fmt, PORT_FORMAT_DSP_AUDIO) == 0)
                     flags              |= PORT_TYPE_AUDIO;
                 else if (strcmp(fmt, PORT_FORMAT_DSP_MIDI) == 0)
-                    flags              |= PORT_TYPE_MIDI;
+                {
+                    bool is_midi2   = false;
+                    if (fetch_pw_bool(dict, "contro.ump", false))
+                        is_midi2        = true;
+
+                    flags              |= (is_midi2) ? PORT_TYPE_MIDI2 : PORT_TYPE_MIDI;
+                }
                 else
                     return dfl;
 
                 return flags;
+            }
+
+            static char * fetch_spa_string(const char *value, const char *key)
+            {
+                if ((value == NULL) || (key == NULL))
+                    return NULL;
+
+                // Find SPA object
+                struct spa_json iter;
+                if (spa_json_begin_object(&iter, value, strlen(value)) <= 0)
+                    return NULL;
+
+                const char *v = NULL;
+                const int length = spa_json_object_find(&iter, key, &v);
+                if (length < 0)
+                    return NULL;
+
+                // Allocate initial buffer
+                const int buf_size = length + 1;
+                char * buf = malloc_count<char>(buf_size);
+                if (buf == NULL)
+                    return NULL;
+                lsp_finally {
+                    if (buf != NULL)
+                        free(buf);
+                };
+
+                // Parse string into buffer
+                const int res = spa_json_parse_stringn(v, length, buf, buf_size);
+                return (res < 0) ? NULL : release_ptr(buf);
             }
 
             registry::registry() noexcept
@@ -108,6 +155,8 @@ namespace lsp
 
             void registry::construct() noexcept
             {
+                sDefaultSource      = NULL;
+                sDefaultSink        = NULL;
                 init_storage(vClients);
                 init_storage(vNodes);
                 init_storage(vPorts);
@@ -120,6 +169,8 @@ namespace lsp
                 destroy_storage<node_t>(vNodes);
                 destroy_storage<port_t>(vPorts);
                 destroy_storage<link_t>(vLinks);
+                cfree(sDefaultSource);
+                cfree(sDefaultSink);
             }
 
             inline void registry::init_storage(storage_t & storage) noexcept
@@ -279,6 +330,7 @@ namespace lsp
                 if (item == NULL)
                     return;
                 cfree(item->sName);
+                cfree(item->sSystemId);
                 cfree(item);
             }
 
@@ -327,6 +379,7 @@ namespace lsp
                     item->nLinks            = 0;
                     item->nFlags            = 0;
                     item->sName             = NULL;
+                    item->sSystemId         = NULL;
                 }
                 return item;
             }
@@ -488,6 +541,8 @@ namespace lsp
                     if (flags == uint32_t(PORT_TYPE_UNKNOWN))
                         return STATUS_UNSUPPORTED_FORMAT;
 
+                    const bool is_monitor   = fetch_pw_bool(props, PW_KEY_PORT_MONITOR);
+
                     // Allocate port
                     port_t *port            = alloc_port();
                     if (port == NULL)
@@ -500,6 +555,12 @@ namespace lsp
                     port->nPortID           = port_id;
                     port->nFlags            = flags;
                     if ((port->sName = strdup(port_name)) == NULL)
+                        return STATUS_NO_MEM;
+                    port->sSystemId         = strfmt(
+                        "%s_%u",
+                        ((flags & PORT_DIR_MASK) == PORT_DIR_OUT) ? "playback" : ((is_monitor) ? "monitor" : "capture"),
+                        (unsigned)(port_id + 1));
+                    if (port->sSystemId == NULL)
                         return STATUS_NO_MEM;
 
                     // Add to storage
@@ -564,6 +625,29 @@ namespace lsp
                         (out_port != NULL) ? out_port->sName : "<null>", int(link->nOutPortID));
                 #endif /* LSP_TRACE */
                     link = NULL;
+                }
+
+                return STATUS_OK;
+            }
+
+            status_t registry::process_metadata(uint32_t id, const char *key, const char *type, const char *value) noexcept
+            {
+                if (id == PW_ID_CORE)
+                {
+                    if ((key == NULL) || (strcmp(key, "default.audio.sink") == 0))
+                    {
+                        char * const name = lsp::exchange(sDefaultSink, fetch_spa_string(value, "name"));
+                        if (name != NULL)
+                            free(name);
+                        lsp_trace("Default audio sink set to %s", sDefaultSink);
+                    }
+                    if ((key == NULL) || (strcmp(key, "default.audio.source") == 0))
+                    {
+                        char * const name = lsp::exchange(sDefaultSource, fetch_spa_string(value, "name"));
+                        if (name != NULL)
+                            free(name);
+                        lsp_trace("Default audio source set to %s", sDefaultSource);
+                    }
                 }
 
                 return STATUS_OK;
@@ -635,7 +719,7 @@ namespace lsp
                 for (size_t i=0, n=vNodes.nCount; i<n; ++i)
                 {
                     const node_t * const node = static_cast<const node_t *>(vNodes.vObjects[i]);
-                    if (strcmp(node->sName, name) == 0)
+                    if ((node->sName != NULL) && (strcmp(node->sName, name) == 0))
                         return node;
                 }
                 return NULL;
@@ -646,10 +730,77 @@ namespace lsp
                 for (size_t i=0, n=vNodes.nCount; i<n; ++i)
                 {
                     const node_t * const node = static_cast<const node_t *>(vNodes.vObjects[i]);
-                    if (strcmp(node->sUID, uid) == 0)
+                    if ((node->sUID != NULL) && (strcmp(node->sUID, uid) == 0))
                         return node;
                 }
                 return NULL;
+            }
+
+            const node_t *registry::find_node_by_nick(const char *name) const
+            {
+                for (size_t i=0, n=vNodes.nCount; i<n; ++i)
+                {
+                    const node_t * const node = static_cast<const node_t *>(vNodes.vObjects[i]);
+                    if ((node->sNick != NULL) && (strcmp(node->sNick, name) == 0))
+                        return node;
+                }
+                return NULL;
+            }
+
+            const node_t *registry::find_node_by_string(const char *name) const
+            {
+                const node_t * node = find_node_by_uid(name);
+                if (node != NULL)
+                    return node;
+                node = find_node_by_name(name);
+                if (node != NULL)
+                    return node;
+                return find_node_by_nick(name);
+            }
+
+            const port_t *registry::find_node_port(uint32_t node_id, const char *port_id, uint32_t direction)
+            {
+                for (size_t i=0, n=vPorts.nCount; i<n; ++i)
+                {
+                    const port_t * const port = static_cast<const port_t *>(vPorts.vObjects[i]);
+                    if (((port->nFlags ^ direction) & PORT_DIR_MASK) != 0)
+                        continue;
+
+                    if ((port->nNodeID == node_id) && (strcmp(port->sName, port_id) == 0))
+                        return port;
+                }
+                return NULL;
+            }
+
+            const port_t *registry::find_port(const char *port_id, uint32_t direction)
+            {
+                // Find the port name separator character
+                const char * const sep = strrchr(const_cast<char *>(port_id), ':');
+                if (sep == NULL)
+                    return NULL;
+                const size_t sep_index = sep - port_id;
+
+                // Make copy of the string to replace separator character with '\0'
+                char * const node_id    = strdup(port_id);
+                if (node_id == NULL)
+                    return NULL;
+                lsp_finally { free(node_id); };
+
+                char * const port_name  = &node_id[sep_index + 1];
+                node_id[sep_index]      = '\0';
+
+                // Determine the name of the node to lookup
+                const char *lookup_id   = node_id;
+                if (strcmp(node_id, "system") == 0)
+                {
+                    lookup_id   = ((direction & PORT_DIR_MASK) == PORT_DIR_IN) ? sDefaultSink : sDefaultSource;
+                    if (lookup_id == NULL)
+                        lookup_id   = node_id;
+                }
+
+                // Lookup the node
+                const node_t * const node   = find_node_by_string(node_id);
+                return (node != NULL) ? find_node_port(node->nID, port_name, direction) : NULL;
             }
 
         } /* namespace pipewire */

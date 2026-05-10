@@ -34,6 +34,7 @@
 
 #include <pipewire/pipewire.h>
 #include <pipewire/extensions/client-node.h>
+#include <pipewire/extensions/metadata.h>
 #include <spa/param/latency.h>
 #include <spa/utils/ringbuffer.h>
 
@@ -60,6 +61,8 @@ namespace lsp
                         HOOK_CORE,
                         HOOK_REGISTRY,
                         HOOK_FILTER,
+                        HOOK_METADATA_PROXY,
+                        HOOK_METADATA,
 
                         HOOK_TOTAL
                     };
@@ -94,6 +97,8 @@ namespace lsp
                     static const pw_core_events             core_events;
                     static const pw_filter_events           filter_events;
                     static const spa_thread_utils_methods   thread_utils_impl;
+                    static const pw_proxy_events            metadata_proxy_events;
+                    static const pw_metadata_events         metadata_events;
 
                 public:
                     char               *sClientName;
@@ -108,6 +113,7 @@ namespace lsp
                     pw_mempool         *pMemPool;
                     pw_registry        *pRegistry;
                     pw_filter          *pFilter;
+                    pw_metadata        *pMetadata;
                     spa_thread_utils   *pOldThreadUtils;
 
                     registry            sRegistry;
@@ -174,6 +180,12 @@ namespace lsp
                     static int          on_thread_get_rt_range(void *self, const struct spa_dict *props, int *min, int *max);
                     static int          on_thread_acquire_rt(void *self, struct spa_thread *thread, int priority);
                     static int          on_thread_drop_rt(void *self, struct spa_thread *thread);
+
+                protected:
+                    // PipeWire metadata events
+                    static void         on_metadata_destroy(void *self);
+                    static void         on_metadata_removed(void *self);
+                    static int          on_metadata_property(void *data, uint32_t subject, const char *key, const char *type, const char *value);
 
                 protected:
                     // PipeWire notification source

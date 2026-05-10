@@ -68,6 +68,7 @@ namespace lsp
                 uint32_t                nLinks;     // Number of links
                 uint32_t                nFlags;     // Port flags (type, direction)
                 const char             *sName;      // The name of a port
+                const char             *sSystemId;  // System name of a port
             };
 
             // Link

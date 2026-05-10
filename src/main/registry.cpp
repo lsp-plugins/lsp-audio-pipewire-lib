@@ -558,7 +558,7 @@ namespace lsp
                         return STATUS_NO_MEM;
                     port->sSystemId         = strfmt(
                         "%s_%u",
-                        ((flags & PORT_DIR_MASK) == PORT_DIR_OUT) ? "playback" : ((is_monitor) ? "monitor" : "capture"),
+                        ((flags & PORT_DIR_MASK) == PORT_DIR_IN) ? "playback" : ((is_monitor) ? "monitor" : "capture"),
                         (unsigned)(port_id + 1));
                     if (port->sSystemId == NULL)
                         return STATUS_NO_MEM;
@@ -760,13 +760,27 @@ namespace lsp
 
             const port_t *registry::find_node_port(uint32_t node_id, const char *port_id, uint32_t direction)
             {
+                // Lookup by port name first
                 for (size_t i=0, n=vPorts.nCount; i<n; ++i)
                 {
                     const port_t * const port = static_cast<const port_t *>(vPorts.vObjects[i]);
+                    if (port->nNodeID != node_id)
+                        continue;
                     if (((port->nFlags ^ direction) & PORT_DIR_MASK) != 0)
                         continue;
+                    if (strcmp(port->sName, port_id) == 0)
+                        return port;
+                }
 
-                    if ((port->nNodeID == node_id) && (strcmp(port->sName, port_id) == 0))
+                // Lookup by system port name next
+                for (size_t i=0, n=vPorts.nCount; i<n; ++i)
+                {
+                    const port_t * const port = static_cast<const port_t *>(vPorts.vObjects[i]);
+                    if (port->nNodeID != node_id)
+                        continue;
+                    if (((port->nFlags ^ direction) & PORT_DIR_MASK) != 0)
+                        continue;
+                    if (strcmp(port->sSystemId, port_id) == 0)
                         return port;
                 }
                 return NULL;
@@ -799,7 +813,7 @@ namespace lsp
                 }
 
                 // Lookup the node
-                const node_t * const node   = find_node_by_string(node_id);
+                const node_t * const node   = find_node_by_string(lookup_id);
                 return (node != NULL) ? find_node_port(node->nID, port_name, direction) : NULL;
             }
 

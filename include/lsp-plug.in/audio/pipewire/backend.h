@@ -99,6 +99,7 @@ namespace lsp
                     static const spa_thread_utils_methods   thread_utils_impl;
                     static const pw_proxy_events            metadata_proxy_events;
                     static const pw_metadata_events         metadata_events;
+                    static const pw_proxy_events            link_proxy_events;
 
                 public:
                     char               *sClientName;
@@ -185,7 +186,11 @@ namespace lsp
                     // PipeWire metadata events
                     static void         on_metadata_destroy(void *self);
                     static void         on_metadata_removed(void *self);
-                    static int          on_metadata_property(void *data, uint32_t subject, const char *key, const char *type, const char *value);
+                    static int          on_metadata_property(void *self, uint32_t subject, const char *key, const char *type, const char *value);
+
+                protected:
+                    // PipeWire link proxy events
+                    static void         on_link_error(void *code, int seq, int res, const char *message);
 
                 protected:
                     // PipeWire notification source

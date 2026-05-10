@@ -108,7 +108,7 @@ namespace lsp
             };
 
             const pw_proxy_events backend_t::metadata_proxy_events = {
-                PW_VERSION_PROXY_EVENTS,
+                .version            = PW_VERSION_PROXY_EVENTS,
                 .destroy            = on_metadata_destroy,
                 .bound              = NULL,
                 .removed            = on_metadata_removed,
@@ -118,8 +118,18 @@ namespace lsp
             };
 
             const pw_metadata_events backend_t::metadata_events = {
-                PW_VERSION_METADATA_EVENTS,
+                .version            = PW_VERSION_METADATA_EVENTS,
                 .property           = on_metadata_property
+            };
+
+            const pw_proxy_events backend_t::link_proxy_events = {
+                .version            = PW_VERSION_PROXY_EVENTS,
+                .destroy            = NULL,
+                .bound              = NULL,
+                .removed            = NULL,
+                .done               = NULL,
+                .error              = on_link_error,
+                .bound_props        = NULL
             };
 
             // Backend implementation
@@ -1121,7 +1131,65 @@ namespace lsp
 
             status_t backend_t::connect_ports(audio::backend_t *self, const char *source, const char *destination)
             {
-                return STATUS_NOT_IMPLEMENTED;
+                if ((source == NULL) || (destination == NULL))
+                    return STATUS_BAD_ARGUMENTS;
+
+                backend_t * const back      = cast(self);
+
+                pw_thread_loop_lock(back->pContextThreadLoop);
+                lsp_finally { pw_thread_loop_unlock(back->pContextThreadLoop); };
+
+                // Find source and destination port and their matches
+                const pipewire::port_t * const src  = back->sRegistry.find_port(source, PORT_DIR_OUT);
+                if (src == NULL)
+                    return STATUS_NOT_FOUND;
+                const pipewire::port_t * const dst  = back->sRegistry.find_port(destination, PORT_DIR_IN);
+                if (dst == NULL)
+                    return STATUS_NOT_FOUND;
+                if ((src->nFlags & PORT_TYPE_MASK) != (dst->nFlags & PORT_TYPE_MASK))
+                    return STATUS_BAD_TYPE;
+
+                dictionary dict;
+                status_t res;
+                char tmp[32];
+
+                snprintf(tmp, sizeof(tmp), "%u", (unsigned int)(src->nNodeID));
+                if ((res = dict.put(PW_KEY_LINK_OUTPUT_NODE, tmp)) != STATUS_OK)
+                    return res;
+                snprintf(tmp, sizeof(tmp), "%u", (unsigned int)(src->nPortID));
+                if ((res = dict.put(PW_KEY_LINK_OUTPUT_PORT, tmp)) != STATUS_OK)
+                    return res;
+                snprintf(tmp, sizeof(tmp), "%u", (unsigned int)(dst->nNodeID));
+                if ((res = dict.put(PW_KEY_LINK_INPUT_NODE, tmp)) != STATUS_OK)
+                    return res;
+                snprintf(tmp, sizeof(tmp), "%u", (unsigned int)(dst->nPortID));
+                if ((res = dict.put(PW_KEY_LINK_INPUT_PORT, tmp)) != STATUS_OK)
+                    return res;
+                if ((res = dict.put(PW_KEY_OBJECT_LINGER, prop_true)) != STATUS_OK)
+                    return res;
+
+                pw_proxy * const proxy = static_cast<pw_proxy *>(
+                    pw_core_create_object(
+                        back->pCore,
+                        "link-factory",
+                        PW_TYPE_INTERFACE_Link,
+                        PW_VERSION_LINK,
+                        dict.dict(),
+                        0));
+                if (proxy == NULL)
+                    return STATUS_UNKNOWN_ERR;
+
+                spa_hook listener;
+                bzero(&listener, sizeof(listener));
+                int link_res = 0;
+
+                pw_proxy_add_listener(proxy, &listener, &link_proxy_events, &link_res);
+                if ((res = back->sync_core(false)) != STATUS_OK)
+                    return res;
+                spa_hook_remove(&listener);
+                pw_proxy_destroy(proxy);
+
+                return (link_res < 0) ? STATUS_UNKNOWN_ERR : STATUS_OK;
             }
 
             status_t backend_t::disconnect_ports(audio::backend_t *self, const char *source, const char *destination)
@@ -1488,9 +1556,9 @@ namespace lsp
                 }
             }
 
-            int backend_t::on_metadata_property(void *data, uint32_t subject, const char *key, const char *type, const char *value)
+            int backend_t::on_metadata_property(void *self, uint32_t subject, const char *key, const char *type, const char *value)
             {
-                backend_t * const back  = cast(data);
+                backend_t * const back  = cast(self);
                 back->sRegistry.process_metadata(subject, key, type, value);
                 return 0;
             }
@@ -1755,6 +1823,12 @@ namespace lsp
             void backend_t::on_notify_event(void *self, uint64_t count)
             {
                 lsp_trace("self = %p", self);
+            }
+
+            void backend_t::on_link_error(void *code, int seq, int res, const char *message)
+            {
+                int *link_res = static_cast<int *>(code);
+                *link_res = res;
             }
 
             void backend_t::notify_connection_lost(bool stop) noexcept

@@ -20,6 +20,13 @@
 
 #------------------------------------------------------------------------------
 # Variables that describe source code dependencies
+LSP_3RD_PARTY_VERSION      := 1.0.27
+LSP_3RD_PARTY_NAME         := lsp-3rd-party
+LSP_3RD_PARTY_TYPE         := hdr
+LSP_3RD_PARTY_INC_OPT      := -idirafter
+LSP_3RD_PARTY_URL_RO       := https://github.com/lsp-plugins/$(LSP_3RD_PARTY_NAME).git
+LSP_3RD_PARTY_URL_RW       := git@github.com:lsp-plugins/$(LSP_3RD_PARTY_NAME).git
+
 LSP_AUDIO_IFACE_VERSION    := 1.0.0
 LSP_AUDIO_IFACE_NAME       := lsp-audio-iface
 LSP_AUDIO_IFACE_TYPE       := src

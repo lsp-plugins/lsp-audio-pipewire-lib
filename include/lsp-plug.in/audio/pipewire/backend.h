@@ -29,11 +29,11 @@
 #include <lsp-plug.in/audio/pipewire/registry.h>
 #include <lsp-plug.in/audio/pipewire/ringbuffer.h>
 
-#include <pipewire/pipewire.h>
-#include <pipewire/extensions/client-node.h>
-#include <pipewire/extensions/metadata.h>
-#include <spa/param/latency.h>
-#include <spa/utils/ringbuffer.h>
+#include <pw-headers/pipewire/pipewire.h>
+#include <pw-headers/pipewire/extensions/client-node.h>
+#include <pw-headers/pipewire/extensions/metadata.h>
+#include <pw-headers/spa/param/latency.h>
+#include <pw-headers/spa/utils/ringbuffer.h>
 
 namespace lsp
 {

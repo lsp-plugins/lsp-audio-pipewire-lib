@@ -27,8 +27,8 @@
 #include <lsp-plug.in/audio/pipewire/registry_types.h>
 #include <lsp-plug.in/common/status.h>
 
-#include <pipewire/core.h>
-#include <spa/utils/dict.h>
+#include <pw-headers/pipewire/core.h>
+#include <pw-headers/spa/utils/dict.h>
 
 namespace lsp
 {

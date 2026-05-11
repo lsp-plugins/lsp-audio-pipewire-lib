@@ -29,8 +29,8 @@
 #include <lsp-plug.in/common/status.h>
 #include <lsp-plug.in/common/types.h>
 
-#include <pipewire/properties.h>
-#include <spa/utils/dict.h>
+#include <pw-headers/pipewire/properties.h>
+#include <pw-headers/spa/utils/dict.h>
 
 namespace lsp
 {

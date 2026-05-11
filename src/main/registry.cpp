@@ -29,12 +29,12 @@
 #include <lsp-plug.in/stdlib/stdio.h>
 #include <lsp-plug.in/stdlib/string.h>
 
-#include <pipewire/client.h>
-#include <pipewire/keys.h>
-#include <pipewire/link.h>
-#include <pipewire/node.h>
-#include <pipewire/port.h>
-#include <spa/utils/json.h>
+#include <pw-headers/pipewire/client.h>
+#include <pw-headers/pipewire/keys.h>
+#include <pw-headers/pipewire/link.h>
+#include <pw-headers/pipewire/node.h>
+#include <pw-headers/pipewire/port.h>
+#include <pw-headers/spa/utils/json.h>
 
 namespace lsp
 {
@@ -75,7 +75,7 @@ namespace lsp
                 if ((value == NULL) || (value[0] == '\0'))
                     return dfl;
 
-                return strcmp(value, "true") == 0;
+                return strcmp(value, prop_true) == 0;
             }
 
             static uint32_t fetch_port_flags(const spa_dict * dict, uint32_t dfl = PORT_TYPE_UNKNOWN)
@@ -86,9 +86,9 @@ namespace lsp
                 const char *dir     = spa_dict_lookup(dict, PW_KEY_PORT_DIRECTION);
                 if (dir == NULL)
                     return dfl;
-                else if (strcmp(dir, "in") == 0)
+                else if (strcmp(dir, PW_PORT_DIRECTION_IN) == 0)
                     flags              |= PORT_DIR_IN;
-                else if (strcmp(dir, "out") == 0)
+                else if (strcmp(dir, PW_PORT_DIRECTION_OUT) == 0)
                     flags              |= PORT_DIR_OUT;
                 else
                     return dfl;
@@ -102,7 +102,7 @@ namespace lsp
                 else if (strcmp(fmt, PORT_FORMAT_DSP_MIDI) == 0)
                 {
                     bool is_midi2   = false;
-                    if (fetch_pw_bool(dict, "contro.ump", false))
+                    if (fetch_pw_bool(dict, PW_KEY_CONTROL_UMP, false))
                         is_midi2        = true;
 
                     flags              |= (is_midi2) ? PORT_TYPE_MIDI2 : PORT_TYPE_MIDI;
@@ -648,16 +648,16 @@ namespace lsp
             {
                 if (id == PW_ID_CORE)
                 {
-                    if ((key == NULL) || (strcmp(key, "default.audio.sink") == 0))
+                    if ((key == NULL) || (strcmp(key, PW_KEY_DEFAULT_AUDIO_SINK) == 0))
                     {
-                        char * const name = lsp::exchange(sDefaultSink, fetch_spa_string(value, "name"));
+                        char * const name = lsp::exchange(sDefaultSink, fetch_spa_string(value, PW_KEY_NAME));
                         if (name != NULL)
                             free(name);
                         lsp_trace("Default audio sink set to %s", sDefaultSink);
                     }
-                    if ((key == NULL) || (strcmp(key, "default.audio.source") == 0))
+                    if ((key == NULL) || (strcmp(key, PW_KEY_DEFAULT_AUDIO_SOURCE) == 0))
                     {
-                        char * const name = lsp::exchange(sDefaultSource, fetch_spa_string(value, "name"));
+                        char * const name = lsp::exchange(sDefaultSource, fetch_spa_string(value, PW_KEY_NAME));
                         if (name != NULL)
                             free(name);
                         lsp_trace("Default audio source set to %s", sDefaultSource);
@@ -819,7 +819,7 @@ namespace lsp
 
                 // Determine the name of the node to lookup
                 const char *lookup_id   = node_id;
-                if (strcmp(node_id, "system") == 0)
+                if (strcmp(node_id, DEFAULT_DEVICE_NAME) == 0)
                 {
                     lookup_id   = ((direction & PORT_DIR_MASK) == PORT_DIR_IN) ? sDefaultSink : sDefaultSource;
                     if (lookup_id == NULL)

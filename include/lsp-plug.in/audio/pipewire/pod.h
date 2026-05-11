@@ -25,8 +25,8 @@
 #include <lsp-plug.in/audio/pipewire/version.h>
 
 #include <lsp-plug.in/common/types.h>
-#include <spa/param/latency.h>
-#include <spa/pod/builder.h>
+#include <pw-headers/spa/param/latency.h>
+#include <pw-headers/spa/pod/builder.h>
 
 namespace lsp
 {

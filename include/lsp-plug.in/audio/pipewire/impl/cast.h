@@ -26,7 +26,7 @@
 
 #include <lsp-plug.in/audio/iface/types.h>
 #include <lsp-plug.in/audio/pipewire/backend.h>
-#include <pipewire/proxy.h>
+#include <pw-headers/pipewire/proxy.h>
 
 namespace lsp
 {
@@ -40,11 +40,23 @@ namespace lsp
             constexpr const char *BACKEND_MEDIA_TYPE            = "Audio";
             constexpr const char *BACKEND_MEDIA_CATEGORY        = "Duplex";
             constexpr const char *BACKEND_MEDIA_ROLE            = "DSP";
+            constexpr const char *BACKEND_CLIENT_API            = "native";
+
+            constexpr const char *BACKEND_CONFIG_FILE           = "client.conf";
 
             constexpr const char *PORT_FORMAT_DSP_AUDIO         = "32 bit float mono audio";
             constexpr const char *PORT_FORMAT_DSP_MIDI          = "8 bit raw midi";
             constexpr const char *PORT_FORMAT_DSP_MIDI2         = "32 bit raw UMP";
             constexpr const char *PORT_FORMAT_DSP_OTHER         = "other";
+
+            constexpr const char *DEFAULT_DEVICE_NAME           = "system";
+            constexpr const char *DEFAULT_SERVER_NAME           = "default";
+
+            constexpr const char *METADATA_DEFAULT_NAME         = "default";
+
+            constexpr const char *ACTION_UPDATE_PROPERTIES      = "update-props";
+
+            constexpr const char *BACKEN_DEFAULT_NODE_GROUP     = "group.dsp.0";
 
             constexpr const uint32_t RING_BUFFER_SIZE           = 0x1000;
 

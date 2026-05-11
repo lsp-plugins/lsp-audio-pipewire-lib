@@ -24,9 +24,9 @@
 #include <lsp-plug.in/audio/pipewire/factory.h>
 
 #include <lsp-plug.in/common/static.h>
+#include <lsp-plug.in/stdlib/stdlib.h>
 
-#include <pipewire/pipewire.h>
-#include <stdlib.h>
+#include <pw-headers/pipewire/pipewire.h>
 
 namespace lsp
 {

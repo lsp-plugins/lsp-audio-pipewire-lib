@@ -108,7 +108,7 @@ MTEST_BEGIN("pipewire", client)
         test_type_t * const test = client->test;
         audio::pipewire::backend_t * const back = client->back;
 
-//        test->printf("on_process\n");
+        test->printf("on_process frames=%d\n", int(frames));
 
         MTEST_ASSERT_PTR(test, client->activated);
         MTEST_ASSERT_PTR(test, client->connected);
@@ -349,7 +349,7 @@ MTEST_BEGIN("pipewire", client)
         res = back->disconnect_ports(back, back->port_system_name(back, client.audio_out[0]), "system:playback_1");
         printf("Disconnect %s -> %s = %d", back->port_system_name(back, client.audio_out[0]), "system:playback_1", int(res));
 
-        sleep(60);
+        sleep(10);
 
         // Disconnect backend
         printf("Disconnecting from PipeWire...\n");

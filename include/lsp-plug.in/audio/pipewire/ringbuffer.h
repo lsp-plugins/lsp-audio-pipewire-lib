@@ -27,9 +27,9 @@
 #include <lsp-plug.in/common/status.h>
 #include <lsp-plug.in/common/types.h>
 
-#include <pipewire/loop.h>
-#include <spa/support/loop.h>
-#include <spa/utils/ringbuffer.h>
+#include <pw-headers/pipewire/loop.h>
+#include <pw-headers/spa/support/loop.h>
+#include <pw-headers/spa/utils/ringbuffer.h>
 
 namespace lsp
 {

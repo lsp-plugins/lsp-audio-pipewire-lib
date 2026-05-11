@@ -27,6 +27,7 @@
 									<listOptionValue builtIn="false" value="/usr/include/pipewire-0.3"/>
 									<listOptionValue builtIn="false" value="/usr/include/spa-0.2"/>
 									<listOptionValue builtIn="false" value="&quot;${workspace_loc:/${ProjName}/include}&quot;"/>
+									<listOptionValue builtIn="false" value="&quot;${workspace_loc:/${ProjName}/modules/lsp-3rd-party/include}&quot;"/>
 									<listOptionValue builtIn="false" value="&quot;${workspace_loc:/${ProjName}/modules/lsp-audio-iface/include}&quot;"/>
 									<listOptionValue builtIn="false" value="&quot;${workspace_loc:/${ProjName}/modules/lsp-common-lib/include}&quot;"/>
 									<listOptionValue builtIn="false" value="&quot;${workspace_loc:/${ProjName}/modules/lsp-test-fw/include}&quot;"/>
@@ -50,6 +51,7 @@
 									<listOptionValue builtIn="false" value="/usr/include/pipewire-0.3"/>
 									<listOptionValue builtIn="false" value="/usr/include/spa-0.2"/>
 									<listOptionValue builtIn="false" value="&quot;${workspace_loc:/${ProjName}/include}&quot;"/>
+									<listOptionValue builtIn="false" value="&quot;${workspace_loc:/${ProjName}/modules/lsp-3rd-party/include}&quot;"/>
 									<listOptionValue builtIn="false" value="&quot;${workspace_loc:/${ProjName}/modules/lsp-audio-iface/include}&quot;"/>
 									<listOptionValue builtIn="false" value="&quot;${workspace_loc:/${ProjName}/modules/lsp-common-lib/include}&quot;"/>
 									<listOptionValue builtIn="false" value="&quot;${workspace_loc:/${ProjName}/modules/lsp-test-fw/include}&quot;"/>
@@ -71,8 +73,11 @@
 							</tool>
 						</toolChain>
 					</folderInfo>
+					<fileInfo id="cdt.managedbuild.config.gnu.exe.debug.720579381.182681578" name="main.cpp" rcbsApplicability="disable" resourcePath="modules/lsp-3rd-party/src/test/main.cpp" toolsToInvoke="cdt.managedbuild.tool.gnu.cpp.compiler.exe.debug.844006186.965360603">
+						<tool id="cdt.managedbuild.tool.gnu.cpp.compiler.exe.debug.844006186.965360603" name="GCC C++ Compiler" superClass="cdt.managedbuild.tool.gnu.cpp.compiler.exe.debug.844006186"/>
+					</fileInfo>
 					<sourceEntries>
-						<entry excluding="modules/lsp-audio-iface/src/test/main.cpp|modules/lsp-common-lib/src/test/main.cpp|modules/lsp-test-fw/src/test/main.cpp" flags="VALUE_WORKSPACE_PATH|RESOLVED" kind="sourcePath" name=""/>
+						<entry excluding="modules/lsp-3rd-party/src/test/main.cpp|modules/lsp-audio-iface/src/test/main.cpp|modules/lsp-common-lib/src/test/main.cpp|modules/lsp-test-fw/src/test/main.cpp" flags="VALUE_WORKSPACE_PATH|RESOLVED" kind="sourcePath" name=""/>
 					</sourceEntries>
 				</configuration>
 			</storageModule>
@@ -127,8 +132,11 @@
 							</tool>
 						</toolChain>
 					</folderInfo>
+					<fileInfo id="cdt.managedbuild.config.gnu.exe.release.82192441.163117404" name="main.cpp" rcbsApplicability="disable" resourcePath="modules/lsp-3rd-party/src/test/main.cpp" toolsToInvoke="cdt.managedbuild.tool.gnu.cpp.compiler.exe.release.859742215.1971095421">
+						<tool id="cdt.managedbuild.tool.gnu.cpp.compiler.exe.release.859742215.1971095421" name="GCC C++ Compiler" superClass="cdt.managedbuild.tool.gnu.cpp.compiler.exe.release.859742215"/>
+					</fileInfo>
 					<sourceEntries>
-						<entry excluding="modules/lsp-audio-iface/src/test/main.cpp|modules/lsp-common-lib/src/test/main.cpp|modules/lsp-test-fw/src/test/main.cpp" flags="VALUE_WORKSPACE_PATH|RESOLVED" kind="sourcePath" name=""/>
+						<entry excluding="modules/lsp-3rd-party/src/test/main.cpp|modules/lsp-audio-iface/src/test/main.cpp|modules/lsp-common-lib/src/test/main.cpp|modules/lsp-test-fw/src/test/main.cpp" flags="VALUE_WORKSPACE_PATH|RESOLVED" kind="sourcePath" name=""/>
 					</sourceEntries>
 				</configuration>
 			</storageModule>
@@ -192,8 +200,11 @@
 							</tool>
 						</toolChain>
 					</folderInfo>
+					<fileInfo id="cdt.managedbuild.config.gnu.exe.debug.720579381.748582240.1927445234" name="main.cpp" rcbsApplicability="disable" resourcePath="modules/lsp-3rd-party/src/test/main.cpp" toolsToInvoke="cdt.managedbuild.tool.gnu.cpp.compiler.exe.debug.1036461413.2127435951">
+						<tool id="cdt.managedbuild.tool.gnu.cpp.compiler.exe.debug.1036461413.2127435951" name="GCC C++ Compiler" superClass="cdt.managedbuild.tool.gnu.cpp.compiler.exe.debug.1036461413"/>
+					</fileInfo>
 					<sourceEntries>
-						<entry excluding="modules/lsp-audio-iface/src/test/main.cpp|modules/lsp-common-lib/src/test/main.cpp|modules/lsp-test-fw/src/test/main.cpp" flags="VALUE_WORKSPACE_PATH|RESOLVED" kind="sourcePath" name=""/>
+						<entry excluding="modules/lsp-3rd-party/src/test/main.cpp|modules/lsp-audio-iface/src/test/main.cpp|modules/lsp-common-lib/src/test/main.cpp|modules/lsp-test-fw/src/test/main.cpp" flags="VALUE_WORKSPACE_PATH|RESOLVED" kind="sourcePath" name=""/>
 					</sourceEntries>
 				</configuration>
 			</storageModule>

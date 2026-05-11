@@ -35,13 +35,13 @@
 #include <lsp-plug.in/stdlib/stdlib.h>
 #include <lsp-plug.in/stdlib/string.h>
 
-#include <pipewire/thread.h>
-#include <spa/control/control.h>
-#include <spa/node/io.h>
-#include <spa/param/audio/raw.h>
-#include <spa/param/audio/raw-utils.h>
-#include <spa/param/latency-utils.h>
-#include <spa/support/thread.h>
+#include <pw-headers/pipewire/thread.h>
+#include <pw-headers/spa/control/control.h>
+#include <pw-headers/spa/node/io.h>
+#include <pw-headers/spa/param/audio/raw.h>
+#include <pw-headers/spa/param/audio/raw-utils.h>
+#include <pw-headers/spa/param/latency-utils.h>
+#include <pw-headers/spa/support/thread.h>
 
 #include <errno.h>
 
@@ -243,7 +243,7 @@ namespace lsp
                 // Fill server name
                 if ((params->url != NULL) &&
                     ((strlen(params->url) == 0) ||
-                    (strcmp(params->url, "default") != 0)))
+                    (strcmp(params->url, DEFAULT_SERVER_NAME) != 0)))
                 {
                     sServerName         = strdup(params->url);
                     if (sServerName == NULL)
@@ -259,8 +259,8 @@ namespace lsp
                     SPA_KEY_THREAD_RESET_ON_FORK, prop_false,
                     PW_KEY_REMOTE_NAME, sServerName,
                     PW_KEY_CLIENT_NAME, sClientName,
-                    PW_KEY_CLIENT_API, "native",
-                    PW_KEY_CONFIG_NAME, "client.conf",
+                    PW_KEY_CLIENT_API, BACKEND_CLIENT_API,
+                    PW_KEY_CONFIG_NAME, BACKEND_CONFIG_FILE,
                     PW_KEY_MEDIA_TYPE, BACKEND_MEDIA_TYPE,
                     PW_KEY_MEDIA_CATEGORY, BACKEND_MEDIA_CATEGORY,
                     PW_KEY_MEDIA_ROLE, BACKEND_MEDIA_ROLE);
@@ -350,16 +350,16 @@ namespace lsp
                     }
 
                     pw_context_conf_section_match_rules(
-                        pContext, "client.rules",
+                        pContext, PW_KEY_CLIENT_RULES,
                         sContextDict.dict(), execute_context_properties_match, this);
 
                     lsp_trace("Context dictionary:\n%s", sContextDict.to_string());
 
                     // Update I/O parameters
                     io_parameters_t * const io = &sIOParams;
-                    io->buffer_size         = pw_properties_get_uint32(context_props, "default.clock.quantum", 1024);
-                    io->max_buffer_size     = pw_properties_get_uint32(context_props, "default.clock.quantum-limit", 8192);
-                    io->sample_rate         = pw_properties_get_uint32(context_props, "default.clock.rate", 48000);
+                    io->buffer_size         = pw_properties_get_uint32(context_props, PW_KEY_DEFAULT_CLOCK_QUANTUM, 1024);
+                    io->max_buffer_size     = pw_properties_get_uint32(context_props, PW_KEY_DEFAULT_CLOCK_QUANTUM_LIMIT, 8192);
+                    io->sample_rate         = pw_properties_get_uint32(context_props, PW_KEY_DEFAULT_CLOCK_RATE, 48000);
                 }
 
                 // Thread utils interface
@@ -445,7 +445,7 @@ namespace lsp
                         const char *key_node_group = sContextDict.value(
                             PW_KEY_NODE_GROUP,
                             sClientDict.value(
-                                PW_KEY_NODE_GROUP, "group.dsp.0"));
+                                PW_KEY_NODE_GROUP, BACKEN_DEFAULT_NODE_GROUP));
 
                         snprintf(node_latency, sizeof(node_latency), "0/%d", int(sIOParams.sample_rate));
                         snprintf(node_rate, sizeof(node_rate), "1/%d", int(sIOParams.sample_rate));
@@ -454,9 +454,9 @@ namespace lsp
                             PW_KEY_NODE_NAME, sClientName,
                             PW_KEY_NODE_GROUP, key_node_group,
                             PW_KEY_NODE_DESCRIPTION, sClientName,
-                            PW_KEY_MEDIA_TYPE, "Audio",
-                            PW_KEY_MEDIA_CATEGORY, "Duplex",
-                            PW_KEY_MEDIA_ROLE, "DSP",
+                            PW_KEY_MEDIA_TYPE, BACKEND_MEDIA_TYPE,
+                            PW_KEY_MEDIA_CATEGORY, BACKEND_MEDIA_CATEGORY,
+                            PW_KEY_MEDIA_ROLE, BACKEND_MEDIA_ROLE,
                             PW_KEY_NODE_LATENCY, node_latency,
                             PW_KEY_NODE_RATE, node_rate,
                             PW_KEY_NODE_ALWAYS_PROCESS, prop_true,
@@ -1201,7 +1201,8 @@ namespace lsp
                     return STATUS_NOT_FOUND;
 
                 pw_registry_destroy(back->pRegistry, link->nID);
-                return back->sync_core(false);
+                int error = back->sync_core(false);
+                return (error < 0) ? STATUS_UNKNOWN_ERR : STATUS_OK;
             }
 
             size_t backend_t::audio_buffers_count(audio::backend_t *self, port_id_t port_id)
@@ -1386,7 +1387,7 @@ namespace lsp
                     if (metadata_name == NULL)
                         return;
 
-                    if ((strcmp(metadata_name, "default") == 0) && (back->pMetadata == NULL))
+                    if ((strcmp(metadata_name, METADATA_DEFAULT_NAME) == 0) && (back->pMetadata == NULL))
                     {
                         back->pMetadata = static_cast<pw_metadata *>(
                             pw_registry_bind(
@@ -1830,7 +1831,7 @@ namespace lsp
 
                 backend_t * const back = cast(self);
 
-                if (strcmp(action, "update-props") == 0)
+                if (strcmp(action, ACTION_UPDATE_PROPERTIES) == 0)
                 {
                     // Update properties
                     pw_properties * const props = back->sClientDict.make_properties();

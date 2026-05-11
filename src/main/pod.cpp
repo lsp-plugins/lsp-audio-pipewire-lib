@@ -23,11 +23,11 @@
 
 #include <lsp-plug.in/audio/pipewire/impl/pw-defs.h>
 
-#include <spa/node/io.h>
-#include <spa/param/audio/raw.h>
-#include <spa/param/format.h>
-#include <spa/param/param.h>
-#include <spa/param/latency-utils.h>
+#include <pw-headers/spa/node/io.h>
+#include <pw-headers/spa/param/audio/raw.h>
+#include <pw-headers/spa/param/format.h>
+#include <pw-headers/spa/param/param.h>
+#include <pw-headers/spa/param/latency-utils.h>
 
 namespace lsp
 {

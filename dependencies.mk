@@ -21,6 +21,7 @@
 #------------------------------------------------------------------------------
 # List of common dependencies
 DEPENDENCIES = \
+  LSP_3RD_PARTY \
   LSP_AUDIO_IFACE \
   LSP_COMMON_LIB
 

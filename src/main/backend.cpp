@@ -1714,10 +1714,55 @@ namespace lsp
                     }
                 }
 
-                // TODO: update sIOPosition
+                // Update sIOPosition
+                const spa_io_segment * const seg    = &position->segments[0];
+                const spa_io_clock * const clock    = &position->clock;
+
+                io_position_t * const pos       = &back->sIOPosition;
+                if (int64_t(clock->position) >= position->offset)
+                {
+                    const uint64_t running          = clock->position - position->offset;
+                    if (running >= seg->start && ((seg->duration == 0) || (running < (seg->start + seg->duration))))
+                        pos->frame = uint32_t((running - seg->start) * seg->rate + seg->position);
+                    else
+                        pos->frame = seg->position;
+                }
+                else
+                    pos->frame = seg->position;
+
+                pos->speed                      = (position->state == SPA_IO_POSITION_STATE_RUNNING) ? 1.0f : 0.0f;
+
+                const spa_io_segment_bar * const bar = &seg->bar;
+                if (SPA_FLAG_IS_SET(bar->flags, SPA_IO_SEGMENT_BAR_FLAG_VALID))
+                {
+                    const double abs_beat           = bar->beat;
+                    const int32_t xbar              = int32_t(abs_beat / bar->signature_num);
+                    const int64_t beats             = int64_t(xbar * bar->signature_num);
+                    const int32_t xbeat             = int32_t(abs_beat - beats);
+                    const int32_t xtick             = int32_t((abs_beat - (beats + xbeat)) * bar->ticks_per_beat);
+
+                    pos->bar                        = xbar;
+                    pos->beat                       = xbeat + 1;
+                    pos->tick                       = xtick;
+                    pos->numerator                  = bar->signature_num;
+                    pos->denominator                = bar->signature_denom;
+                    pos->beats_per_minute           = bar->bpm;
+                    pos->ticks_per_beat             = bar->ticks_per_beat;
+                }
+                else
+                {
+                    pos->bar                        = 0;
+                    pos->beat                       = 0;
+                    pos->tick                       = 0;
+                    pos->numerator                  = 4.0f;
+                    pos->denominator                = 4.0f;
+                    pos->beats_per_minute           = 120.0f;
+                    pos->ticks_per_beat             = 4096.0f;
+                }
+                pos->beats_per_minute_change    = 0.0f;
 
                 // Issue callback
-                back->pCallbacks->on_process(back->pUserData, &back->sIOPosition, samples);
+                back->pCallbacks->on_process(back->pUserData, pos, samples);
 
                 // Queue all available port buffers
                 for (port_id_t i=0; i<back->nPortCapacity; ++i)

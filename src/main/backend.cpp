@@ -29,6 +29,7 @@
 #include <lsp-plug.in/audio/pipewire/messages.h>
 #include <lsp-plug.in/audio/pipewire/pod.h>
 #include <lsp-plug.in/audio/pipewire/impl/cast.h>
+#include <lsp-plug.in/audio/pipewire/impl/mutex.h>
 #include <lsp-plug.in/audio/pipewire/impl/pw-defs.h>
 
 #include <lsp-plug.in/stdlib/stdio.h>
@@ -140,6 +141,7 @@ namespace lsp
             {
                 sClientName                     = NULL;
                 sServerName                     = NULL;
+                pMutex                          = NULL;
                 pAudioDataLoop                  = NULL;
                 pContextThreadLoop              = NULL;
                 pAudioLoop                      = NULL;
@@ -252,6 +254,11 @@ namespace lsp
                         return STATUS_NO_MEM;
                     }
                 }
+
+                // Create mutex
+                pMutex              = mutex_create();
+                if (pMutex == NULL)
+                    return STATUS_NO_MEM;
 
                 // Create context properties
                 res = sClientDict.put(
@@ -560,6 +567,12 @@ namespace lsp
                     pContextLoop = NULL;
                 }
 
+                if (pMutex != NULL)
+                {
+                    mutex_destroy(pMutex);
+                    pMutex      = NULL;
+                }
+
                 if (sServerName != NULL)
                 {
                     free(sServerName);
@@ -642,6 +655,14 @@ namespace lsp
                     if ((callbacks) && (callbacks->on_deactivated))
                         callbacks->on_deactivated(user_data);
 
+                    return res;
+                }
+
+                // Wait until all ports have been registered
+                res                 = back->wait_all_ports_registered();
+                if (res != STATUS_OK)
+                {
+                    lsp_error("Error waiting filter readiness");
                     return res;
                 }
 
@@ -1062,6 +1083,14 @@ namespace lsp
                         lsp_error("Error synchronizing with client, code=%d", int(-error));
                         return -STATUS_UNKNOWN_ERR;
                     }
+
+                    // Wait until all ports have been successfully registered
+                    if (back->bActivated)
+                    {
+                        res = back->wait_all_ports_registered();
+                        if (res != STATUS_OK)
+                            return res;
+                    }
                 }
 
                 return release_ptr(port) - back->vPorts;
@@ -1376,6 +1405,8 @@ namespace lsp
                     lsp_trace("Related properties:\n%s\n", dict.to_string());
             #endif /* LSP_TRACE */
 
+                MUTEX_SCOPED_LOCK(back->pMutex);
+
                 // Check that we need to synchronize node name
                 bool sync_node_name = false;
                 if (strcmp(type, PW_TYPE_INTERFACE_Node) == 0)
@@ -1383,7 +1414,34 @@ namespace lsp
                     if ((back->pFilter != NULL) && (id == pw_filter_get_node_id(back->pFilter)))
                         sync_node_name  = back->sRegistry.find_node_by_name(back->sClientName) != NULL;
                 }
+                else if (strcmp(type, PW_TYPE_INTERFACE_Metadata) == 0)
+                {
+                    const char *metadata_name = spa_dict_lookup(props, PW_KEY_METADATA_NAME);
+                    if (metadata_name == NULL)
+                        return;
 
+                    if ((strcmp(metadata_name, METADATA_DEFAULT_NAME) == 0) && (back->pMetadata == NULL))
+                    {
+                        back->pMetadata = static_cast<pw_metadata *>(
+                            pw_registry_bind(
+                                back->pRegistry,
+                                id, type, PW_VERSION_METADATA, 0));
+
+                        if (back->pMetadata == NULL)
+                            return;
+
+                        pw_proxy_add_listener(
+                            to_pw_proxy(back->pMetadata),
+                            &back->vHooks[HOOK_METADATA_PROXY],
+                            &metadata_proxy_events, back);
+                        pw_metadata_add_listener(
+                            back->pMetadata,
+                            &back->vHooks[HOOK_METADATA],
+                            &metadata_events, back);
+                    }
+                }
+
+                // Process event by registry
                 const status_t res = back->sRegistry.process_add(id, permissions, type, version, props);
                 if (res != STATUS_OK)
                 {
@@ -1443,35 +1501,11 @@ namespace lsp
                             {
                                 lsp_trace("Global id=%u was assigned to port %s", (unsigned int)(id), xp->sID);
                                 xp->nId         = id;
+
+                                mutex_notify(back->pMutex);
                                 break;
                             }
                         }
-                    }
-                }
-                else if (strcmp(type, PW_TYPE_INTERFACE_Metadata) == 0)
-                {
-                    const char *metadata_name = spa_dict_lookup(props, PW_KEY_METADATA_NAME);
-                    if (metadata_name == NULL)
-                        return;
-
-                    if ((strcmp(metadata_name, METADATA_DEFAULT_NAME) == 0) && (back->pMetadata == NULL))
-                    {
-                        back->pMetadata = static_cast<pw_metadata *>(
-                            pw_registry_bind(
-                                back->pRegistry,
-                                id, type, PW_VERSION_METADATA, 0));
-
-                        if (back->pMetadata == NULL)
-                            return;
-
-                        pw_proxy_add_listener(
-                            to_pw_proxy(back->pMetadata),
-                            &back->vHooks[HOOK_METADATA_PROXY],
-                            &metadata_proxy_events, back);
-                        pw_metadata_add_listener(
-                            back->pMetadata,
-                            &back->vHooks[HOOK_METADATA],
-                            &metadata_events, back);
                     }
                 }
             }
@@ -1480,6 +1514,8 @@ namespace lsp
             {
                 lsp_trace("self=%p, id=%d\n", self, int(id));
                 backend_t * const back      = cast(self);
+
+                MUTEX_SCOPED_LOCK(back->pMutex);
 
                 status_t res = back->sRegistry.process_remove(id);
                 if (res != STATUS_OK)
@@ -1592,6 +1628,15 @@ namespace lsp
 
             void backend_t::on_filter_state_changed(void *self, enum pw_filter_state old, enum pw_filter_state state, const char *error)
             {
+                lsp_trace("self=%p, old=%d, new=%d, error=%d", self, int(old), int(state), error);
+
+                // Notify connection lost if filter became an error state.
+                backend_t * const back = cast(self);
+                if (state == PW_FILTER_STATE_ERROR)
+                {
+                    if ((back->pCallbacks != NULL) && (back->pCallbacks->on_connection_lost))
+                        back->pCallbacks->on_connection_lost(back->pUserData);
+                }
             }
 
             void backend_t::on_filter_io_changed(void *self, void *port_data, uint32_t id, void *area, uint32_t size)
@@ -1674,6 +1719,28 @@ namespace lsp
                     lsp_error("Failed to update filter latency, error=%d", -error);
                     notify_connection_lost(false);
                 }
+            }
+
+            status_t backend_t::wait_all_ports_registered() noexcept
+            {
+                MUTEX_SCOPED_LOCK(pMutex);
+
+                // Iterate over all ports and wait until they will be registered in the core
+                for (port_id_t i=0; i<nPortCapacity; ++i)
+                {
+                    port_t * const port = &vPorts[i];
+                    if (port->nType == PORT_TYPE_FREE)
+                        continue;
+
+                    while (port->nId == SPA_ID_INVALID)
+                    {
+                        status_t res = mutex_wait(pMutex, 1000);
+                        if (res != STATUS_OK)
+                            return res;
+                    }
+                }
+
+                return STATUS_OK;
             }
 
             void backend_t::on_filter_param_changed(void *self, void *port_data, uint32_t id, const struct spa_pod *param)
@@ -1831,7 +1898,6 @@ namespace lsp
                         int(command->body.body.id),
                         decode_spa_node_command(command->body.body.id));
                 }
-                lsp_trace("debug");
             }
 
             void backend_t::on_notify_event(void *self, uint64_t count)

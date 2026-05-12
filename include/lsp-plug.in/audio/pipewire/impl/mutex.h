@@ -27,8 +27,9 @@
 #include <lsp-plug.in/common/types.h>
 
 #ifdef PLATFORM_POSIX
-    #include <pthread.h>
     #include <errno.h>
+    #include <pthread.h>
+    #include <sys/time.h>
 #else
     #error "Need to implement mutex for the target platform"
 #endif /* PLATFORM_POSIX*/
@@ -42,6 +43,7 @@ namespace lsp
             typedef struct mutex_t
             {
                 pthread_mutex_t lock;
+                pthread_cond_t cond;
             } mutex_t;
 
             inline mutex_t *mutex_create()
@@ -59,6 +61,11 @@ namespace lsp
                 pthread_mutexattr_settype(&attr, PTHREAD_MUTEX_RECURSIVE);
                 pthread_mutex_init(&mutex->lock, &attr);
                 pthread_mutexattr_destroy(&attr);
+
+                pthread_condattr_t cond_attr;
+                pthread_condattr_init(&cond_attr);
+                pthread_cond_init(&mutex->cond, &cond_attr);
+                pthread_condattr_destroy(&cond_attr);
 
                 return release_ptr(mutex);
             }
@@ -89,6 +96,35 @@ namespace lsp
             {
                 if (mutex != NULL)
                     pthread_mutex_unlock(&mutex->lock);
+            }
+
+            status_t mutex_wait(mutex_t *mutex, uint32_t millis)
+            {
+                struct timeval now;
+                struct timespec deadline;
+
+                // Set-up the fire time
+                gettimeofday(&now, NULL);
+                deadline.tv_nsec    = now.tv_usec * 1000 + (millis % 1000) * 1000000;
+                deadline.tv_sec     = now.tv_sec + (millis / 1000) + (deadline.tv_nsec / 1000000000);
+                deadline.tv_nsec   %= 1000000000;
+
+                // Perform wait
+                int result          = pthread_cond_timedwait(&mutex->cond, &mutex->lock, &deadline);
+                switch (result)
+                {
+                    case 0: return STATUS_OK;
+                    case ETIMEDOUT: return STATUS_TIMED_OUT;
+                    case EPERM: return STATUS_BAD_STATE;
+                    default: break;
+                }
+
+                return STATUS_UNKNOWN_ERR;
+            }
+
+            bool mutex_notify(mutex_t *mutex)
+            {
+                return pthread_cond_broadcast(&mutex->cond) == 0;
             }
 
             inline mutex_guard::mutex_guard(mutex_t *mutex)
@@ -127,6 +163,7 @@ namespace lsp
                 pMutex = lsp::exchange(src.pMutex, static_cast<mutex_t *>(NULL));
                 return *this;
             }
+
 
         } /* namespace pipewire */
     }  /* namespace audio */

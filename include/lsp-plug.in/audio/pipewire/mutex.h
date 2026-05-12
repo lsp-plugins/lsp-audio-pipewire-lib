@@ -23,6 +23,7 @@
 #define LSP_PLUG_IN_AUDIO_PIPEWIRE_MUTEX_H_
 
 #include <lsp-plug.in/audio/pipewire/version.h>
+#include <lsp-plug.in/common/status.h>
 
 namespace lsp
 {
@@ -62,6 +63,19 @@ namespace lsp
              * @param mutex mutex to unlock
              */
             inline void         mutex_unlock(mutex_t *mutex);
+
+            /**
+             * Wait for the mutex
+             * @param mutex mutex to wait
+             */
+            inline status_t     mutex_wait(mutex_t *mutex, uint32_t millis);
+
+            /**
+             * Wait for the mutex
+             * @param mutex mutex to wait
+             * @return true on success
+             */
+            inline bool         mutex_notify(mutex_t *mutex);
 
             /**
              * Mutex guard

@@ -330,6 +330,7 @@ MTEST_BEGIN("pipewire", client)
         MTEST_ASSERT(client.connected == true);
         const char * port_name;
 
+        printf("Performing port processing\n");
         port_name = back->port_system_name(back, client.audio_in[0]);
         MTEST_ASSERT((port_name != NULL) && (strcmp(port_name, "PipeWire Manual Test:in_l") == 0));
         port_name = back->port_system_name(back, client.audio_in[1]);
@@ -342,13 +343,14 @@ MTEST_BEGIN("pipewire", client)
         // Connect ports
         status_t res;
         res = back->connect_ports(back, back->port_system_name(back, client.audio_out[0]), "system:playback_1");
-        printf("Connect %s -> %s = %d", back->port_system_name(back, client.audio_out[0]), "system:playback_1", int(res));
+        printf("Connect %s -> %s = %d\n", back->port_system_name(back, client.audio_out[0]), "system:playback_1", int(res));
         res = back->connect_ports(back, back->port_system_name(back, client.audio_out[1]), "system:playback_2");
-        printf("Connect %s -> %s = %d", back->port_system_name(back, client.audio_out[1]), "system:playback_2", int(res));
+        printf("Connect %s -> %s = %d\n", back->port_system_name(back, client.audio_out[1]), "system:playback_2", int(res));
 
         res = back->disconnect_ports(back, back->port_system_name(back, client.audio_out[0]), "system:playback_1");
-        printf("Disconnect %s -> %s = %d", back->port_system_name(back, client.audio_out[0]), "system:playback_1", int(res));
+        printf("Disconnect %s -> %s = %d\n", back->port_system_name(back, client.audio_out[0]), "system:playback_1", int(res));
 
+        printf("Entering main loop\n");
         sleep(10);
 
         // Disconnect backend

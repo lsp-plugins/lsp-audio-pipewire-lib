@@ -51,6 +51,11 @@ LIBPIPEWIRE_VERSION        := system
 LIBPIPEWIRE_NAME           := libpipewire-0.3
 LIBPIPEWIRE_TYPE           := pkg
 
+LIBPTHREAD_VERSION         := system
+LIBPTHREAD_NAME            := libpthread
+LIBPTHREAD_TYPE            := opt
+LIBPTHREAD_LDFLAGS         := -lpthread
+
 LIBSHLWAPI_VERSION         := system
 LIBSHLWAPI_NAME            := libshlwapi
 LIBSHLWAPI_TYPE            := opt

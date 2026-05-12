@@ -26,6 +26,7 @@
 
 #include <lsp-plug.in/audio/iface/backend.h>
 #include <lsp-plug.in/audio/pipewire/dictionary.h>
+#include <lsp-plug.in/audio/pipewire/mutex.h>
 #include <lsp-plug.in/audio/pipewire/registry.h>
 #include <lsp-plug.in/audio/pipewire/ringbuffer.h>
 
@@ -95,6 +96,7 @@ namespace lsp
                 public:
                     char               *sClientName;
                     char               *sServerName;
+                    mutex_t            *pMutex;
                     pw_data_loop       *pAudioDataLoop;
                     pw_thread_loop     *pContextThreadLoop;
                     pw_loop            *pAudioLoop;
@@ -199,6 +201,7 @@ namespace lsp
                     void                update_sample_rate(const struct spa_pod *param) noexcept;
                     void                notify_connection_lost(bool stop) noexcept;
                     void                update_latency(uint32_t latency) noexcept;
+                    status_t            wait_all_ports_registered() noexcept;
 
                 protected:
                     static void         init_port(port_t *port) noexcept;

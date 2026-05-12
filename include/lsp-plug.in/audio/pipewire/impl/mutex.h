@@ -48,7 +48,7 @@ namespace lsp
 
             inline mutex_t *mutex_create()
             {
-                mutex_t *mutex = static_cast<mutex_t *>(malloc(sizeof(pthread_mutex_t)));
+                mutex_t *mutex = malloc_count<mutex_t>(1);
                 if (mutex == NULL)
                     return NULL;
                 lsp_finally {

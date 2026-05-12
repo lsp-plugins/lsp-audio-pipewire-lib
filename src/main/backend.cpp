@@ -647,22 +647,17 @@ namespace lsp
 
                 // Activate the client
                 res                 = back->activate();
+                if (res == STATUS_OK)
+                    res                 = back->wait_all_ports_registered();
                 if (res != STATUS_OK)
                 {
                     lsp_error("Could not activate PipeWire client");
 
                     // Issue deactivation callback
+                    back->bActivated    = false;
                     if ((callbacks) && (callbacks->on_deactivated))
                         callbacks->on_deactivated(user_data);
 
-                    return res;
-                }
-
-                // Wait until all ports have been registered
-                res                 = back->wait_all_ports_registered();
-                if (res != STATUS_OK)
-                {
-                    lsp_error("Error waiting filter readiness");
                     return res;
                 }
 

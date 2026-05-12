@@ -800,6 +800,12 @@ namespace lsp
                 return NULL;
             }
 
+            const port_t *registry::find_port_by_id(uint32_t id) const noexcept
+            {
+                registry * const self = const_cast<registry *>(this);
+                return find_by_id<port_t>(self->vPorts, id);
+            }
+
             const port_t *registry::find_port(const char *port_id, uint32_t direction) const noexcept
             {
                 // Find the port name separator character

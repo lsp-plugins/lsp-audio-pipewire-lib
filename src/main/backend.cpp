@@ -927,6 +927,7 @@ namespace lsp
                     lsp_warn("Failed to add port id=%s", port->sID);
                     return STATUS_NO_MEM;
                 }
+                port->nId                   = SPA_ID_INVALID;
                 port->pHandle->nPortId      = port - vPorts;
 
                 // Port has been successfully registered
@@ -941,6 +942,7 @@ namespace lsp
                 if (port->sFullId == NULL)
                     return STATUS_OK;
                 free(port->sFullId);
+                port->nId           = SPA_ID_INVALID;
                 port->sFullId       = NULL;
                 port->pHandle       = NULL;
                 port->pBuffer       = NULL;
@@ -1381,6 +1383,71 @@ namespace lsp
                     if ((back->pFilter != NULL) && (id == pw_filter_get_node_id(back->pFilter)))
                         sync_node_name  = back->sRegistry.find_node_by_name(back->sClientName) != NULL;
                 }
+
+                const status_t res = back->sRegistry.process_add(id, permissions, type, version, props);
+                if (res != STATUS_OK)
+                {
+                    lsp_warn("Error while processing registry add event "
+                        "self=%p, id=%d, permissions=0x%x, type:%s/%d, props=%p: code=%d",
+                        self, int(id), int(permissions), type, int(version), props, int(res));
+                    return;
+                }
+
+                // Process node-related data
+                const uint32_t filter_node_id = pw_filter_get_node_id(back->pFilter);
+                if (filter_node_id == SPA_ID_INVALID)
+                    return;
+
+                const node_t * const node = (sync_node_name) ? back->sRegistry.find_node_by_id(filter_node_id) : NULL;
+                if (node != NULL)
+                {
+                    // Update client name
+                    char * new_name = strdup(node->sUID);
+                    if (new_name != NULL)
+                    {
+                        lsp_trace("Node name updated from '%s' to '%s'", back->sClientName, new_name);
+                        free(back->sClientName);
+                        back->sClientName = new_name;
+                    }
+
+                    // Update string port identifiers
+                    for (port_id_t i=0; i<back->nPortCapacity; ++i)
+                    {
+                        port_t * const port = &back->vPorts[i];
+                        if (port->nType == PORT_TYPE_FREE)
+                            continue;
+
+                        new_name        = back->make_port_full_id(port->sID);
+                        if (new_name != NULL)
+                        {
+                            if (port->sFullId != NULL)
+                                free(port->sFullId);
+                            port->sFullId   = new_name;
+                        }
+                    }
+                }
+
+                if (strcmp(type, PW_TYPE_INTERFACE_Port) == 0)
+                {
+                    // Remember port identifier
+                    const pipewire::port_t * port = back->sRegistry.find_port_by_id(id);
+                    if (port->nNodeID == filter_node_id)
+                    {
+                        // Update unique port identifiers
+                        for (port_id_t i=0; i<back->nPortCapacity; ++i)
+                        {
+                            port_t * const xp = &back->vPorts[i];
+                            if (xp->nType == PORT_TYPE_FREE)
+                                continue;
+                            if (strcmp(xp->sID, port->sName) == 0)
+                            {
+                                lsp_trace("Global id=%u was assigned to port %s", (unsigned int)(id), xp->sID);
+                                xp->nId         = id;
+                                break;
+                            }
+                        }
+                    }
+                }
                 else if (strcmp(type, PW_TYPE_INTERFACE_Metadata) == 0)
                 {
                     const char *metadata_name = spa_dict_lookup(props, PW_KEY_METADATA_NAME);
@@ -1406,46 +1473,6 @@ namespace lsp
                             &back->vHooks[HOOK_METADATA],
                             &metadata_events, back);
                     }
-                }
-
-                const status_t res = back->sRegistry.process_add(id, permissions, type, version, props);
-                if (res == STATUS_OK)
-                {
-                    const node_t * const node = (sync_node_name) ?
-                        back->sRegistry.find_node_by_id(pw_filter_get_node_id(back->pFilter)) : NULL;
-                    if (node != NULL)
-                    {
-                        // Update client name
-                        char * new_name = strdup(node->sUID);
-                        if (new_name != NULL)
-                        {
-                            lsp_trace("Node name updated from '%s' to '%s'", back->sClientName, new_name);
-                            free(back->sClientName);
-                            back->sClientName = new_name;
-                        }
-
-                        // Update global port identifiers
-                        for (port_id_t i=0; i<back->nPortCapacity; ++i)
-                        {
-                            port_t * const port = &back->vPorts[i];
-                            if (port->nType == PORT_TYPE_FREE)
-                                continue;
-
-                            new_name        = back->make_port_full_id(port->sID);
-                            if (new_name != NULL)
-                            {
-                                if (port->sFullId != NULL)
-                                    free(port->sFullId);
-                                port->sFullId   = new_name;
-                            }
-                        }
-                    }
-                }
-                else
-                {
-                    lsp_warn("Error while processing registry add event "
-                        "self=%p, id=%d, permissions=0x%x, type:%s/%d, props=%p: code=%d",
-                        self, int(id), int(permissions), type, int(version), props, int(res));
                 }
             }
 

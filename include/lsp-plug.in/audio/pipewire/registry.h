@@ -108,7 +108,10 @@ namespace lsp
                     const node_t   *find_node_by_string(const char *name) const noexcept;
                     const node_t   *find_node_by_uid(const char *uid) const noexcept;
                     const port_t   *find_node_port(uint32_t node_id, const char *port_id, uint32_t direction) const noexcept;
+
+                    const port_t   *find_port_by_id(uint32_t id) const noexcept;
                     const port_t   *find_port(const char *port_id, uint32_t direction) const noexcept;
+
                     const link_t   *find_link(const port_t *src, const port_t *dst) const noexcept;
                     const link_t   *find_link(uint32_t src_node_id, uint32_t src_port_id, uint32_t dst_node_id, uint32_t dst_port_id) const noexcept;
             };

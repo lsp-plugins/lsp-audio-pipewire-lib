@@ -65,6 +65,7 @@ namespace lsp
                     typedef struct port_t
                     {
                         uint32_t            nType;
+                        uint32_t            nId;
                         port_data_t        *pHandle;
                         pw_buffer          *pBuffer;
                         char               *sFullId;

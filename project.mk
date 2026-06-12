@@ -23,4 +23,4 @@ ARTIFACT_ID                 = LSP_AUDIO_PIPEWIRE_LIB
 ARTIFACT_NAME               = lsp-audio-pipewire-lib
 ARTIFACT_DESC               = Audio backend for PipeWire audio subsystem
 ARTIFACT_HEADERS            = lsp-plug.in
-ARTIFACT_VERSION            = 1.0.0-devel
+ARTIFACT_VERSION            = 1.0.0

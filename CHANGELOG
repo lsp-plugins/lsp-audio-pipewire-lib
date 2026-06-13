@@ -3,7 +3,7 @@
 *******************************************************************************
 
 === 1.0.1 ===
-
+* Do not emit warning for unsupported node ports.
 
 === 1.0.0 ===
 * Initial release.

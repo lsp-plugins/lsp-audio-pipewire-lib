@@ -1438,11 +1438,14 @@ namespace lsp
 
                 // Process event by registry
                 const status_t res = back->sRegistry.process_add(id, permissions, type, version, props);
-                if (res != STATUS_OK)
+                if ((res != STATUS_OK) && (res != STATUS_UNSUPPORTED_FORMAT))
                 {
                     lsp_warn("Error while processing registry add event "
                         "self=%p, id=%d, permissions=0x%x, type:%s/%d, props=%p: code=%d",
                         self, int(id), int(permissions), type, int(version), props, int(res));
+                    lsp_warn("Properties:");
+                    for (size_t i=0, n=props->n_items; i<n; ++i)
+                        lsp_warn("  %s = %s", props->items[i].key, props->items[i].value);
                     return;
                 }
 

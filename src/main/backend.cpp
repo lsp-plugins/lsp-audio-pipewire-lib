@@ -1487,7 +1487,7 @@ namespace lsp
                 {
                     // Remember port identifier
                     const pipewire::port_t * port = back->sRegistry.find_port_by_id(id);
-                    if (port->nNodeID == filter_node_id)
+                    if ((port != NULL) && (port->nNodeID == filter_node_id))
                     {
                         // Update unique port identifiers
                         for (port_id_t i=0; i<back->nPortCapacity; ++i)

@@ -185,6 +185,8 @@ namespace lsp
                 destroy_storage<link_t>(vLinks);
                 cfree(sDefaultSource);
                 cfree(sDefaultSink);
+                sDefaultSource          = NULL;
+                sDefaultSink            = NULL;
             }
 
             inline void registry::init_storage(storage_t & storage) noexcept
@@ -199,9 +201,11 @@ namespace lsp
             {
                 for (size_t i=0; i<storage.nCount; ++i)
                     destroy(static_cast<T *>(storage.vObjects[i]));
+
                 cfree(storage.vObjects);
-                storage.nCount      = 0;
-                storage.nCapacity   = 0;
+                storage.vObjects        = NULL;
+                storage.nCount          = 0;
+                storage.nCapacity       = 0;
             }
 
             template <typename T>
@@ -218,9 +222,9 @@ namespace lsp
                 {
                     const int32_t middle = (first + last) >> 1;
                     object_t * const obj = storage.vObjects[middle];
-                    if (obj->nID < id)
+                    if (id < obj->nID)
                         last                = middle - 1;
-                    else if (obj->nID > id)
+                    else if (id > obj->nID)
                         first               = middle + 1;
                     else
                         return obj;
@@ -235,9 +239,9 @@ namespace lsp
                 {
                     const int32_t middle = (first + last) >> 1;
                     object_t * const obj = storage.vObjects[middle];
-                    if (obj->nID < id)
+                    if (id < obj->nID)
                         last                = middle - 1;
-                    else if (obj->nID > id)
+                    else if (id > obj->nID)
                         first               = middle + 1;
                     else
                         return uint32_t(middle);
@@ -268,7 +272,7 @@ namespace lsp
                 // Ensure that we have enough capacity to insert
                 if (storage.nCount >= storage.nCapacity)
                 {
-                    const uint32_t new_cap = lsp_max(storage.nCapacity << 1, uint32_t(4));
+                    const uint32_t new_cap  = lsp_max(storage.nCapacity << 1, uint32_t(4));
                     object_t **new_items    = realloc_count<object_t *>(storage.vObjects, new_cap);
                     if (new_items == NULL)
                         return false;
@@ -304,7 +308,7 @@ namespace lsp
             inline T *registry::remove_by_id(storage_t & storage, uint32_t id) noexcept
             {
                 const uint32_t index    = storage_index_of(storage, id);
-                if (index >= storage.nCapacity)
+                if (index >= storage.nCount)
                     return NULL;
                 object_t * const obj    = storage.vObjects[index];
                 if (obj->nID != id)
@@ -590,6 +594,7 @@ namespace lsp
                         (node != NULL) ? node->sName : "<null>",
                         (node != NULL) ? node->sUID: "<null>");
                 #endif /* LSP_TRACE */
+
                     port  = NULL;
                 }
                 else if (strcmp(type, PW_TYPE_INTERFACE_Link) == 0)

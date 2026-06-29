@@ -52,6 +52,7 @@ namespace lsp
                 protected:
                     char           *sDefaultSource;
                     char           *sDefaultSink;
+                    storage_t       vDevices;
                     storage_t       vClients;
                     storage_t       vNodes;
                     storage_t       vPorts;
@@ -71,11 +72,13 @@ namespace lsp
                     template <typename T>
                     static inline T    *remove_by_id(storage_t & storage, uint32_t id) noexcept;
 
-                    static inline void destroy(client_t *iteme) noexcept;
+                    static inline void destroy(device_t *item) noexcept;
+                    static inline void destroy(client_t *item) noexcept;
                     static inline void destroy(node_t *item) noexcept;
                     static inline void destroy(port_t *item) noexcept;
                     static inline void destroy(link_t *item) noexcept;
 
+                    static inline device_t     *alloc_device() noexcept;
                     static inline client_t     *alloc_client() noexcept;
                     static inline node_t       *alloc_node() noexcept;
                     static inline port_t       *alloc_port() noexcept;

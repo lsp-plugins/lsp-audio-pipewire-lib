@@ -49,6 +49,11 @@ namespace lsp
                     free(const_cast<T *>(ptr));
             }
 
+            static inline char *cstrdup(const char * ptr)
+            {
+                return strdup((ptr != NULL) ? ptr : "");
+            }
+
             static uint32_t fetch_pw_id(const spa_dict * dict, const char *key, uint32_t dfl = SPA_ID_INVALID)
             {
                 const char *value = spa_dict_lookup(dict, key);
@@ -171,6 +176,7 @@ namespace lsp
             {
                 sDefaultSource      = NULL;
                 sDefaultSink        = NULL;
+                init_storage(vDevices);
                 init_storage(vClients);
                 init_storage(vNodes);
                 init_storage(vPorts);
@@ -179,6 +185,7 @@ namespace lsp
 
             void registry::destroy() noexcept
             {
+                destroy_storage<device_t>(vDevices);
                 destroy_storage<client_t>(vClients);
                 destroy_storage<node_t>(vNodes);
                 destroy_storage<port_t>(vPorts);
@@ -323,6 +330,19 @@ namespace lsp
                 return static_cast<T *>(obj);
             }
 
+            inline void registry::destroy(device_t *item) noexcept
+            {
+                if (item == NULL)
+                    return;
+                cfree(item->sName);
+                cfree(item->sNick);
+                cfree(item->sDesc);
+                cfree(item->sAPI);
+                cfree(item->sMediaClass);
+                cfree(item->sMediaRole);
+                cfree(item);
+            }
+
             inline void registry::destroy(client_t *item) noexcept
             {
                 if (item == NULL)
@@ -357,6 +377,24 @@ namespace lsp
                 if (item == NULL)
                     return;
                 cfree(item);
+            }
+
+            inline device_t *registry::alloc_device() noexcept
+            {
+                device_t * const item   = malloc_count<device_t>(1);
+                if (item != NULL)
+                {
+                    item->nID               = SPA_ID_INVALID;
+                    item->nClientID         = SPA_ID_INVALID;
+                    item->nFactoryID        = SPA_ID_INVALID;
+                    item->sName             = NULL;
+                    item->sNick             = NULL;
+                    item->sDesc             = NULL;
+                    item->sAPI              = NULL;
+                    item->sMediaClass       = NULL;
+                    item->sMediaRole        = NULL;
+                }
+                return item;
             }
 
             inline client_t *registry::alloc_client() noexcept
@@ -645,6 +683,57 @@ namespace lsp
                 #endif /* LSP_TRACE */
                     link = NULL;
                 }
+                else if (strcmp(type, PW_TYPE_INTERFACE_Device) == 0)
+                {
+                    // Fetch properties
+                    const char *name    = spa_dict_lookup(props, PW_KEY_DEVICE_NAME);
+                    if (name == NULL)
+                        return STATUS_BAD_ARGUMENTS;
+                    const char *api     = spa_dict_lookup(props, PW_KEY_DEVICE_API);
+                    if (api == NULL)
+                        return STATUS_BAD_ARGUMENTS;
+
+                    const char *nick    = spa_dict_lookup(props, PW_KEY_DEVICE_NICK);
+                    const char *desc    = spa_dict_lookup(props, PW_KEY_DEVICE_DESCRIPTION);
+                    const char *mclass  = spa_dict_lookup(props, PW_KEY_MEDIA_CLASS);
+                    const char *mrole   = spa_dict_lookup(props, PW_KEY_MEDIA_ROLE);
+
+                    const uint32_t client_id = fetch_pw_id(props, PW_KEY_CLIENT_ID);
+                    if (client_id == SPA_ID_INVALID)
+                        return STATUS_BAD_ARGUMENTS;
+
+                    // Allocate client
+                    device_t *dev       = alloc_device();
+                    if (dev == NULL)
+                        return STATUS_NO_MEM;
+                    lsp_finally { destroy(dev); };
+
+                    // Initialize
+                    dev->nID            = id;
+                    dev->nClientID      = client_id;
+                    if ((dev->sName = cstrdup(name)) == NULL)
+                        return STATUS_NO_MEM;
+                    if ((dev->sNick = cstrdup(nick)) == NULL)
+                        return STATUS_NO_MEM;
+                    if ((dev->sDesc = cstrdup(desc)) == NULL)
+                        return STATUS_NO_MEM;
+                    if ((dev->sAPI = strdup(api)) == NULL)
+                        return STATUS_NO_MEM;
+                    if ((dev->sMediaClass = cstrdup(mclass)) == NULL)
+                        return STATUS_NO_MEM;
+                    if ((dev->sMediaRole = cstrdup(mrole)) == NULL)
+                        return STATUS_NO_MEM;
+
+                    // Add to storage
+                    if (!add_to_storage(vDevices, dev))
+                        return STATUS_NO_MEM;
+
+                    // Do not free client
+                    lsp_trace(
+                        "Registered device id=%d, name=%s, api=%s, desc=%s, client_id=%d",
+                        int(dev->nID), dev->sName, dev->sAPI, dev->sDesc, int(dev->nClientID));
+                    dev = NULL;
+                }
 
                 return STATUS_OK;
             }
@@ -721,6 +810,17 @@ namespace lsp
                         (in_port != NULL) ? in_port->sName : "<null>", int(link->nInPortID));
                 #endif /* LSP_TRACE */
                     destroy(link);
+                    return STATUS_OK;
+                }
+
+                device_t * const dev        = remove_by_id<device_t>(vDevices, id);
+                if (dev != NULL)
+                {
+                    lsp_trace(
+                        "Removed device id=%d, name=%s, api=%s, desc=%s, client_id=%d",
+                        int(dev->nID), dev->sName, dev->sAPI, dev->sDesc, int(dev->nClientID));
+
+                    destroy(dev);
                     return STATUS_OK;
                 }
 

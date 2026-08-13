@@ -1487,7 +1487,7 @@ namespace lsp
                 {
                     // Remember port identifier
                     const pipewire::port_t * port = back->sRegistry.find_port_by_id(id);
-                    if (port->nNodeID == filter_node_id)
+                    if ((port != NULL) && (port->nNodeID == filter_node_id))
                     {
                         // Update unique port identifiers
                         for (port_id_t i=0; i<back->nPortCapacity; ++i)
@@ -1516,11 +1516,11 @@ namespace lsp
                 MUTEX_SCOPED_LOCK(back->pMutex);
 
                 status_t res = back->sRegistry.process_remove(id);
-                if (res != STATUS_OK)
+                if ((res != STATUS_OK) && (res != STATUS_NOT_FOUND))
                 {
                     lsp_warn("Error while processing registry remove event "
-                        "self=%p, id=%d",
-                        self, int(id));
+                        "self=%p, id=%d, res=%d",
+                        self, int(id), int(res));
                 }
             }
 

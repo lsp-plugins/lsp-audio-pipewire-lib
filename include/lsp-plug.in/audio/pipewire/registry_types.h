@@ -43,6 +43,19 @@ namespace lsp
                 uint32_t                nID;        // ID of object
             };
 
+            // Device
+            struct device_t: public object_t
+            {
+                uint32_t                nClientID;  // ID of a client
+                uint32_t                nFactoryID; // ID of a factory
+                const char             *sName;      // Name of a related node
+                const char             *sNick;      // Nickname of a related node
+                const char             *sDesc;      // Description of a related node
+                const char             *sAPI;       // API
+                const char             *sMediaClass;// Media class
+                const char             *sMediaRole; // Media role
+            };
+
             // Client
             struct client_t: public object_t
             {

@@ -20,26 +20,26 @@
 
 #------------------------------------------------------------------------------
 # Variables that describe source code dependencies
-LSP_3RD_PARTY_VERSION      := 1.0.29
+LSP_3RD_PARTY_VERSION      := 1.0.30
 LSP_3RD_PARTY_NAME         := lsp-3rd-party
 LSP_3RD_PARTY_TYPE         := hdr
 LSP_3RD_PARTY_INC_OPT      := -idirafter
 LSP_3RD_PARTY_URL_RO       := https://github.com/lsp-plugins/$(LSP_3RD_PARTY_NAME).git
 LSP_3RD_PARTY_URL_RW       := git@github.com:lsp-plugins/$(LSP_3RD_PARTY_NAME).git
 
-LSP_AUDIO_IFACE_VERSION    := 1.0.1
+LSP_AUDIO_IFACE_VERSION    := 1.0.2
 LSP_AUDIO_IFACE_NAME       := lsp-audio-iface
 LSP_AUDIO_IFACE_TYPE       := src
 LSP_AUDIO_IFACE_URL_RO     := https://github.com/lsp-plugins/$(LSP_AUDIO_IFACE_NAME).git
 LSP_AUDIO_IFACE_URL_RW     := git@github.com:lsp-plugins/$(LSP_AUDIO_IFACE_NAME).git
 
-LSP_COMMON_LIB_VERSION     := 1.0.48
+LSP_COMMON_LIB_VERSION     := 1.0.49
 LSP_COMMON_LIB_NAME        := lsp-common-lib
 LSP_COMMON_LIB_TYPE        := src
 LSP_COMMON_LIB_URL_RO      := https://github.com/lsp-plugins/$(LSP_COMMON_LIB_NAME).git
 LSP_COMMON_LIB_URL_RW      := git@github.com:lsp-plugins/$(LSP_COMMON_LIB_NAME).git
 
-LSP_TEST_FW_VERSION        := 1.0.34
+LSP_TEST_FW_VERSION        := 1.0.35
 LSP_TEST_FW_NAME           := lsp-test-fw
 LSP_TEST_FW_TYPE           := src
 LSP_TEST_FW_URL_RO         := https://github.com/lsp-plugins/$(LSP_TEST_FW_NAME).git
